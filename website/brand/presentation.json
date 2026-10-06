@@ -1,0 +1,55 @@
+{
+  "brand": "MagisForm",
+  "tagline": "Do orçamento à entrega, cada fórmula sob controle.",
+  "brief": "Software desktop para organizar o fluxo de fórmulas de farmácias de manipulação. A identidade comunica precisão, confiança e proximidade.",
+  "adjectives": [
+    "precisão",
+    "organização",
+    "confiança",
+    "proximidade"
+  ],
+  "criteria": "Símbolo legível a partir de 16 px; versões vetoriais monocromáticas; nome independente de clientes.",
+  "industry": "saas",
+  "mockups": [
+    "website",
+    "favicon-tab",
+    "social",
+    "readme",
+    "app-icon",
+    "sticker"
+  ],
+  "nav": [
+    "Recursos",
+    "Como funciona",
+    "Contato"
+  ],
+  "brand_color": "#173E35",
+  "greyscale": false,
+  "final": true,
+  "deck_title": "identidade visual",
+  "label": "Identidade escolhida",
+  "date": "2026-10-01",
+  "concepts": [
+    {
+      "name": "Manipulação",
+      "symbol": "../assets/brand/symbol-green.svg",
+      "lockup": "../assets/brand/logo-horizontal-green.svg",
+      "stacked": "../assets/brand/logo-stacked-green.svg",
+      "symbol_on_tile": "../assets/brand/symbol-white.svg",
+      "symbol_on_dark": "../assets/brand/symbol-white.svg",
+      "lockup_on_dark": "../assets/brand/logo-horizontal-white.svg",
+      "stacked_on_tile": "../assets/brand/logo-stacked-white.svg",
+      "idea": "Um almofariz em M recebe o pistilo: uma marca para o trabalho de manipulação.",
+      "rationale": [
+        "Associação com a atividade farmacêutica",
+        "Forma simples que funciona em tamanhos pequenos",
+        "Logotipo com contornos e fontes licenciadas"
+      ]
+    }
+  ],
+  "recommendation": "Conceito A escolhido pelo usuário. As aplicações são ilustrações da identidade, sem prometer recursos adicionais ou uma versão móvel.",
+  "next_steps": [
+    "Arquivos finais em assets/brand",
+    "Paleta, uso e tamanhos em brand/GUIDE.md"
+  ]
+}

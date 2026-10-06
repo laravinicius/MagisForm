@@ -1,0 +1,55 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+dist-electron/
+release/
+.cache/
+coverage/
+build/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Editor / IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Logs
+*.log
+logs/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Environment / local config
+.env
+.env.*
+!.env.example
+config.json
+
+# Local database and cache files
+*.db
+*.db-shm
+*.db-wal
+cache.db
+
+# Project-local operational files
+att.txt
+db.txt
+info.txt
+
+.plans
+migrations/
+
+# Docker
+docker-data/
+
+# Evidências locais da atualização visual
+/output/playwright/magisform-visual/

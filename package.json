@@ -1,0 +1,67 @@
+{
+  "name": "magisform",
+  "private": true,
+  "version": "0.2.2",
+  "description": "Aplicativo de gerenciamento de fórmulas farmacêuticas.",
+  "author": "Vinicius Lara",
+  "type": "module",
+  "main": "dist-electron/main.js",
+  "scripts": {
+    "dev": "vite --port=3000 --host=0.0.0.0",
+    "build": "node scripts/patch-icon.js && vite build --configLoader native && electron-builder --win",
+    "build:release": "node scripts/patch-icon.js && vite build --configLoader native && electron-builder --win --publish always",
+    "preview": "vite preview",
+    "clean": "node -e \"const fs=require('fs'); for (const dir of ['dist','dist-electron','release','../magisform-release']) fs.rmSync(dir, { recursive: true, force: true });\"",
+    "lint": "tsc --noEmit"
+  },
+  "build": {
+    "appId": "com.magisform.app",
+    "productName": "MagisForm",
+    "electronDist": "node_modules/electron/dist",
+    "directories": {
+      "output": "../magisform-release/${version}"
+    },
+    "files": [
+      "dist",
+      "dist-electron"
+    ],
+    "forceCodeSigning": false,
+    "publish": {
+      "provider": "github",
+      "owner": "laravinicius",
+      "repo": "magisform",
+      "releaseType": "release"
+    },
+    "win": {
+      "icon": "public/icon.ico",
+      "artifactName": "MagisForm-Setup-${version}.${ext}",
+      "target": [
+        "dir",
+        "nsis"
+      ]
+    }
+  },
+  "dependencies": {
+    "electron-updater": "^6.8.9",
+    "lucide-react": "^0.546.0",
+    "motion": "^12.23.24",
+    "mysql2": "^3.18.2",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "^4.1.14",
+    "@types/node": "^22.14.0",
+    "@vitejs/plugin-react": "^5.0.4",
+    "autoprefixer": "^10.4.21",
+    "electron": "^36.9.5",
+    "electron-builder": "^25.1.8",
+    "esbuild": "^0.25.12",
+    "sharp": "^0.35.3",
+    "tailwindcss": "^4.1.14",
+    "typescript": "~5.8.2",
+    "vite": "^6.2.0",
+    "vite-plugin-electron": "^0.29.0",
+    "vite-plugin-electron-renderer": "^0.14.6"
+  }
+}
