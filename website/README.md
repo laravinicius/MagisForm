@@ -20,7 +20,7 @@ Abra http://127.0.0.1:5174/. O servidor fica acessível somente neste computador
 - `assets/js/main.js`: links comerciais, menu móvel e galeria em diálogo nativo.
 - `assets/brand/`: logo A aprovada, variantes vetoriais e favicons.
 - `assets/fonts/`: fontes locais, originais e licenças SIL OFL.
-- `assets/images/`: mockups em WebP/AVIF e imagem de compartilhamento.
+- `assets/images/`: capturas do aplicativo em WebP/AVIF e imagem de compartilhamento.
 - `brand/`: briefing, três conceitos, apresentação final e guia de identidade.
 - `tools/`: geração opcional das imagens, preparação de marca e verificações de arquivos.
 
@@ -32,7 +32,11 @@ Sem uma configuração válida, os links levam à seção de contato e aparece �
 
 ## Conteúdo e imagens
 
-As três prévias são ilustrações baseadas nos módulos de painel inicial, cadastro e fórmulas confirmadas. Usam exclusivamente dados sintéticos, com a identidade MagisForm. Não são capturas de uma versão instalada com essa marca; não há conexão com IPC, API ou banco de dados. Seus valores não são estatísticas comerciais.
+As imagens são capturas do renderer atual do MagisForm, com os mesmos componentes React, fontes, menus e estilos do aplicativo. A seção “O MagisForm na rotina da sua farmácia” explica seis áreas: visão geral, pedido e orçamento, produção e retirada, pagamentos, clientes e histórico com repetição de pedidos. Os recortes destacam detalhes da própria interface; a ampliação abre a tela completa, exceto o detalhe específico do pagamento.
+
+Os dados são exclusivamente fictícios: clientes de exemplo, telefones sem uso, insumos genéricos e pedidos de demonstração. O exemplo de pagamento mostra um orçamento de R$ 180,00, R$ 72,00 recebidos e R$ 108,00 restantes. Os valores não são estatísticas comerciais. As imagens mostram o renderer em um navegador isolado; não representam capturas de uma instalação ligada ao banco da operação.
+
+No celular, a imagem ampliada pode ser deslizada horizontalmente para facilitar a leitura. A legenda identifica a origem: “Telas do MagisForm com dados fictícios para demonstração.”
 
 O site apresenta o produto como aplicativo desktop para Windows que depende de conexão ao banco de dados da operação. A contratação é sob consulta. Não há preços, depoimentos ou serviços de implantação/suporte prometidos.
 
@@ -51,7 +55,31 @@ git diff --check
 
 Inspecione também o navegador em 375, 768, 1024 e 1440 px. Verifique menu, âncoras, FAQ com teclado, abertura/fechamento das prévias, Escape, foco restaurado e links de WhatsApp. O diálogo nativo possui tratamento explícito de Tab e Shift+Tab para manter o foco dentro da prévia enquanto ela está aberta. A folha CSS respeita `prefers-reduced-motion` e nenhum conteúdo depende de animação.
 
-As ferramentas de geração são opcionais: exigem Python com fontTools/Pillow e Node com Sharp, disponíveis no ambiente usado para preparar os arquivos. Não são necessárias para servir ou editar o site. O renderizador Node utiliza o Sharp já instalado na raiz do repositório.
+As ferramentas de geração são opcionais e não são necessárias para servir o site. Para atualizar as capturas após mudanças na interface, instale as dependências do repositório e tenha Python, Node.js/npx e Google Chrome disponíveis. Execute na raiz:
+
+```powershell
+python website/tools/create-previews.py
+```
+
+O comando inicia um Vite separado em `127.0.0.1:5175`, sem carregar a configuração Electron, injeta `demo-bridge.js` e captura o renderer via Playwright CLI. A bridge só fornece dados fictícios e bloqueia operações não previstas; o navegador bloqueia requisições externas. Não há conexão com MariaDB, leitura da configuração da operação, atualização do aplicativo ou envio de mensagens. A data do navegador fica em 06/10/2026 para manter os exemplos reproduzíveis. O processo fecha sua sessão de captura e o servidor ao terminar. A porta 5175 precisa estar livre.
+
+O npx obtém `@playwright/cli` se necessário, sem adicioná-lo às dependências do projeto. Os PNGs originais ficam em `assets/images/sources/`. `render-assets.cjs` converte essas capturas para WebP e AVIF em 960 e 1600 px e atualiza no HTML as dimensões reservadas. Para apenas reconverter os PNGs existentes:
+
+```powershell
+node website/tools/render-assets.cjs --previews-only
+```
+
+As ilustrações antigas não são mais fontes das telas. A geração de logos continua separada e exige fontTools/Pillow. Sem `--previews-only`, o renderizador também gera favicons e a imagem de compartilhamento.
+
+Para repetir a verificação de navegação e responsividade com o servidor estático na porta 5174:
+
+```powershell
+npx --yes --package @playwright/cli playwright-cli -s=magisform-site open --browser=chrome
+npx --yes --package @playwright/cli playwright-cli -s=magisform-site run-code --filename=website/tools/check-site.js
+npx --yes --package @playwright/cli playwright-cli -s=magisform-site close
+```
+
+Essa verificação cobre imagens, proporções, ausência de transbordamento em 375/768/1024/1440 px, menu móvel, FAQ pelo teclado, ampliação, Escape, foco restaurado e destinos comerciais, sem enviar mensagens. As capturas de validação ficam em `output/playwright/magisform-visual/`, ignorado pelo Git. O Playwright CLI também produz arquivos temporários em `.playwright-cli/`; não inclua esses arquivos na publicação ou no versionamento.
 
 ## Publicação futura
 

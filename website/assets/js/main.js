@@ -64,6 +64,11 @@
         modalImage.src = trigger.href;
         modalImage.alt = trigger.querySelector('img')?.alt ?? trigger.dataset.title;
         modalTitle.textContent = trigger.dataset.title;
+        modalImage.onload = () => {
+          modalImage.width = modalImage.naturalWidth;
+          modalImage.height = modalImage.naturalHeight;
+        };
+        dialog.querySelector('.preview-image-scroll').scrollLeft = 0;
         dialog.showModal();
         document.body.classList.add('dialog-open');
         closeButton.focus();
