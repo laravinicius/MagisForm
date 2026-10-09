@@ -20,7 +20,7 @@ exec 3<>/dev/tty
 [[ -r /etc/os-release ]] || fail 'Não foi possível identificar o sistema operacional.'
 # shellcheck disable=SC1091
 source /etc/os-release
-[[ ${ID:-} == ubuntu && ${VERSION_ID:-} == 24.04 ]] || fail 'Este instalador suporta Ubuntu Server 24.04 LTS.'
+[[ ${ID:-} == ubuntu && ( ${VERSION_ID:-} == 24.04 || ${VERSION_ID:-} == 26.04 ) ]] || fail 'Este instalador suporta Ubuntu Server 24.04 ou 26.04 LTS.'
 [[ $(dpkg --print-architecture) == amd64 ]] || fail 'A primeira versão suporta somente Ubuntu amd64.'
 
 printf 'Instalação MagisForm em %s\n' "$(hostname -f 2>/dev/null || hostname)"

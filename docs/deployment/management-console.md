@@ -1,14 +1,14 @@
 # Console de gestão MagisForm
 
-## Instalação automática em Ubuntu 24.04
+## Instalação automática em Ubuntu 24.04 e 26.04
 
-Em uma VM limpa Ubuntu Server 24.04 amd64, execute como root ou com `sudo`:
+Em uma VM limpa Ubuntu Server 24.04 ou 26.04 amd64, execute como root ou com `sudo`:
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/laravinicius/magisform/main/deploy/install.sh | sudo bash
 ```
 
-O instalador instala Docker Engine e Compose, clona a branch `main`, registra o commit e constrói as imagens localmente. Não publica imagens. Ele sobe Nginx Proxy Manager, API do console e executor separado; somente o executor recebe o socket Docker. O banco e a aplicação/API de cada farmácia permanecem em containers, rede, segredos e volume exclusivos.
+O instalador instala Docker Engine e Compose, clona a branch `main`, registra o commit e constrói as imagens localmente. Não publica imagens. Ele sobe Nginx Proxy Manager, API do console e executor separado; somente o executor recebe o socket Docker. O banco e a aplicação/API de cada farmácia permanecem em containers, rede, segredos e volume exclusivos. O repositório oficial do Docker publica pacotes para Ubuntu Resolute 26.04 e Noble 24.04.
 
 Escolha teste local ou publicação pública. No teste local, o NPM publica HTTPS somente em loopback na porta 8443, usa hostnames `.magisform.test` e um certificado de teste. Acesse com o túnel exibido pelo instalador e mapeie o hostname para `127.0.0.1` no arquivo `hosts` do computador. Para publicar depois, execute:
 
