@@ -3,6 +3,8 @@ node_modules/
 
 # Build output
 dist/
+dist-web/
+dist-server/
 dist-electron/
 release/
 .cache/
@@ -53,3 +55,38 @@ docker-data/
 
 # Evidências locais da atualização visual
 /output/playwright/magisform-visual/
+
+docs/
+!docs/
+docs/*
+!docs/decisions/
+docs/decisions/*
+!docs/decisions/ADR-002-versioned-database-upgrades.md
+!docs/plans/
+docs/plans/*
+!docs/plans/progress/
+docs/plans/progress/*
+!docs/plans/progress/etapa-04.md
+!docs/plans/progress/etapa-05.md
+!docs/plans/progress/etapa-06.md
+!docs/plans/progress/etapa-07.md
+!docs/plans/progress/etapa-08.md
+!docs/plans/progress/etapa-09.md
+!docs/deployment/
+docs/deployment/*
+!docs/deployment/tenant-installations.md
+!docs/deployment/management-console.md
+.playwright-cli/
+
+# Configuração e segredos locais por instalação (o catálogo também é operacional local)
+deploy/tenants/*
+!deploy/tenants/.gitkeep
+manager-state/
+dist-manager/
+
+# Artefatos operacionais revisáveis das etapas de implantação
+!docs/plans/progress/etapa-10.md
+!docs/plans/progress/etapa-11.md
+!docs/plans/progress/etapa-12.md
+!docs/plans/progress/etapa-13.md
+!docs/deployment/operations.md

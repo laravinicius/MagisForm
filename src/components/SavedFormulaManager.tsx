@@ -15,8 +15,8 @@ import { UnitCycle, INGREDIENT_UNITS, BUDGET_UNITS } from './UnitCycle';
 import { useAuth } from '../context/AuthContext';
 
 export function SavedFormulaManager() {
-  const { data: formulas, loading, error, reload } = useData(() => db.savedFormulas.list());
-  const { data: insumos, reload: reloadInsumos } = useData(() => db.insumos.list());
+  const { data: formulas, loading, error, reload } = useData('savedFormulas', activity => db.savedFormulas.list(activity));
+  const { data: insumos, reload: reloadInsumos } = useData('insumos', activity => db.insumos.list(activity));
   const { user, sessionToken } = useAuth();
   const [name, setName] = useState('');
   const [budgetNumber, setBudgetNumber] = useState('');

@@ -64,7 +64,7 @@ preload.ts / contextBridge
   ↓ IPC
 electron/main.ts / ipcMain.handle
   ↓
-electron/db.ts / mysql2
+core/db.ts / mysql2
   ↓
 MariaDB
 ```
@@ -167,7 +167,9 @@ Os targets configurados são `dir` e `nsis`. O destino é:
 ```text
 magisform/
 ├── electron/
-│   ├── main.ts, preload.ts, db.ts, dbError.ts
+│   ├── main.ts, preload.ts
+├── core/
+│   ├── db.ts, dbError.ts, deliveryTime.ts
 ├── src/
 │   ├── components/          # telas e módulos de negócio
 │   │   ├── AdminUserManager.tsx, AuditLogs.tsx

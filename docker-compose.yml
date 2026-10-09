@@ -12,7 +12,6 @@ services:
       - "3306:3306"
     volumes:
       - magisform-mariadb-data:/var/lib/mysql
-      - ./database.sql:/docker-entrypoint-initdb.d/01-database.sql:ro
     healthcheck:
       test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
       interval: 5s

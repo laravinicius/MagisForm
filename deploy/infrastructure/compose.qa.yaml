@@ -1,0 +1,61 @@
+name: magisform-infra-qa
+services:
+  npm:
+    image: jc21/nginx-proxy-manager:2.16.0
+    container_name: magisform-npm-qa
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:18080:80"
+      - "127.0.0.1:18443:443"
+      - "127.0.0.1:18181:81"
+    volumes:
+      - qa_npm_data:/data
+      - qa_npm_letsencrypt:/etc/letsencrypt
+      - qa_npm_default_tls:/etc/nginx/certs:ro
+      - ./default-https-404.conf:/data/nginx/custom/http_top.conf
+    networks:
+      - qa_control
+      - qa_edge_a
+      - qa_edge_b
+    mem_limit: 1g
+    cpus: 2.0
+    logging:
+      driver: local
+      options:
+        max-size: 10m
+        max-file: "3"
+    depends_on:
+      default_tls:
+        condition: service_completed_successfully
+  default_tls:
+    image: alpine:3.21.3
+    restart: "no"
+    volumes:
+      - qa_npm_default_tls:/certs
+    command: ["sh", "-c", "apk add --no-cache openssl >/dev/null; mkdir -p /certs; if [ ! -s /certs/default.crt ] || [ ! -s /certs/default.key ]; then openssl req -x509 -newkey rsa:2048 -sha256 -nodes -days 2 -keyout /certs/default.key -out /certs/default.crt -subj /CN=invalid.local -addext subjectAltName=DNS:invalid.local && chmod 0600 /certs/default.key && chmod 0644 /certs/default.crt; fi"]
+  upstream_a:
+    image: python:3.13.7-alpine
+    command: ["python3", "-c", "from http.server import BaseHTTPRequestHandler,HTTPServer; H=type('H',(BaseHTTPRequestHandler,),{'do_GET':lambda s:(s.send_response(200),s.end_headers(),s.wfile.write(b'QA FARMACIA A'))}); HTTPServer(('0.0.0.0',8000),H).serve_forever()"]
+    networks:
+      qa_edge_a:
+        aliases: ["mf-qa-a"]
+  upstream_b:
+    image: python:3.13.7-alpine
+    command: ["python3", "-c", "from http.server import BaseHTTPRequestHandler,HTTPServer; H=type('H',(BaseHTTPRequestHandler,),{'do_GET':lambda s:(s.send_response(200),s.end_headers(),s.wfile.write(b'QA FARMACIA B'))}); HTTPServer(('0.0.0.0',8000),H).serve_forever()"]
+    networks:
+      qa_edge_b:
+        aliases: ["mf-qa-b"]
+volumes:
+  qa_npm_data:
+    name: magisform_npm_data_qa
+  qa_npm_letsencrypt:
+    name: magisform_npm_letsencrypt_qa
+  qa_npm_default_tls:
+    name: magisform_npm_default_tls_qa
+networks:
+  qa_control:
+    name: magisform_npm_control_qa
+  qa_edge_a:
+    name: magisform_npm-qa-a
+  qa_edge_b:
+    name: magisform_npm-qa-b

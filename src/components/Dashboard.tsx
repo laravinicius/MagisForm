@@ -1,16 +1,14 @@
-import React, { useMemo } from 'react';
+import React from 'react';
 import { ClipboardList, PlusCircle, Clock, CheckCircle2, Users, Cross } from 'lucide-react';
 import { motion } from 'motion/react';
 import { db } from '../services/lanDatabase';
-import { User, Formula } from '../types';
+import { User } from '../types';
 import { useData } from '../hooks/useData';
 
 export function Dashboard({ user, onNavigate }: { user: User; onNavigate: (tab: any) => void }) {
-  const { data: customers } = useData(() => db.customers.list());
-  const { data: insumos } = useData(() => db.insumos.list());
-  const { data: formulas } = useData(() => db.formulas.list());
-  const pendingFormulas = useMemo(() => (formulas ?? []).filter((f: Formula) => f.status === 'pending').length, [formulas]);
-  const confirmedFormulas = useMemo(() => (formulas ?? []).filter((f: Formula) => f.status === 'confirmed').length, [formulas]);
+  const { data: customers } = useData('customers', activity => db.customers.list(activity));
+  const { data: insumos } = useData('insumos', activity => db.insumos.list(activity));
+  const { data: formulas } = useData('formula-summary:dashboard', () => db.formulas.summary(new Date().getMonth(), new Date().getFullYear()));
 
   return (
     <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -20 }} className="space-y-8">
@@ -19,9 +17,9 @@ export function Dashboard({ user, onNavigate }: { user: User; onNavigate: (tab: 
         <p className="text-muted">Aqui está o que está acontecendo na farmácia hoje.</p>
       </div>
       <div className="ui-stat-grid grid gap-4">
-        <StatCard icon={<ClipboardList />} label="Fórmulas Totais" value={formulas?.length ?? 0} />
-        <StatCard icon={<Clock />} label="Pendentes" value={pendingFormulas} />
-        <StatCard icon={<CheckCircle2 />} label="Confirmadas" value={confirmedFormulas} />
+        <StatCard icon={<ClipboardList />} label="Fórmulas Totais" value={formulas?.total ?? 0} />
+        <StatCard icon={<Clock />} label="Pendentes" value={formulas?.pending ?? 0} />
+        <StatCard icon={<CheckCircle2 />} label="Confirmadas" value={formulas?.confirmed ?? 0} />
         <StatCard icon={<Users />} label="Clientes" value={customers?.length ?? 0} />
         <StatCard icon={<Cross />} label="Insumos" value={insumos?.length ?? 0} />
       </div>

@@ -1,8 +1,12 @@
 # Banco de dados
 
-MariaDB é acessado por `mysql2/promise` através de `Db` em `electron/db.ts`. `database.sql` cria banco, tabelas, índices e seed usados pelo `docker-compose.yml`.
+MariaDB é acessado por `mysql2/promise` através de `Db` em `core/db.ts`. `database.sql` descreve o schema consolidado para instalação limpa e não cria usuário padrão.
 
-`migrations/` contém o histórico que originou o schema consolidado, mas não há executor no runtime ou nos scripts. O fluxo atual usa `database.sql`; não criar migrations novas sem uma decisão arquitetural explícita.
+O ADR-002 define o contrato operacional: bootstrap e upgrade explícitos (`npm run db:bootstrap`, `npm run db:preflight`, `npm run db:upgrade`), upgrades novos somente em `database/upgrades/`, e `migrations/` permanece histórico inerte. A conexão automática do aplicativo nunca executa DDL. Configure `MAGISFORM_DB_HOST`, `MAGISFORM_DB_PORT`, `MAGISFORM_DB_NAME`, `MAGISFORM_DB_USER` e `MAGISFORM_DB_PASSWORD` antes de invocar os comandos. Bootstrap só aceita banco vazio; upgrade exige backup e parada dos clientes.
+
+Versão atual do schema: v2. O upgrade 001 amplia `users.password` para formatos codificados, invalida sessões existentes, adiciona política/expiração e impõe unicidade por usuário. O upgrade 002 adiciona `idx_formulas_created_id(created_at,id)` para a navegação estável e paginada de fórmulas; ele é idempotente e retomável. A etapa 05 usa Argon2id e transita SHA-256 legado após autenticação válida; o enforcement de expiração segue a política `desktop_local` ou `hosted`. Os metadados e checksums dos upgrades residem no próprio schema (`schema_version`, `schema_upgrade_history`). DDL parcial não tem rollback transacional garantido: em falha, mantenha manutenção, execute preflight e retome o upgrade idempotente ou restaure o backup ensaiado.
+
+Para instalação nova, use um banco MariaDB vazio e execute `npm run db:bootstrap`. Para banco legado, execute `npm run db:preflight`, faça backup com restauração ensaiada, feche todos os clientes, então rode `npm run db:upgrade` e repita o preflight. Não aplique `database.sql` sobre banco existente.
 
 ## Entidades
 
@@ -25,4 +29,4 @@ Uma mudança de schema normalmente exige revisar `database.sql`, `src/types.ts`,
 
 Fórmulas antigas sem `delivered_at` continuam no histórico, mas não entram no total mensal. Não há recuperação automática pelos logs nem uso da previsão como aproximação. Para um banco de teste já inicializado, adicionar a coluna com `ALTER TABLE formulas ADD COLUMN IF NOT EXISTS delivered_at DATETIME NULL COMMENT 'Entrega efetiva no fuso America/Sao_Paulo, registrada pelo backend';`. Antes da implantação em produção, validar a atualização do schema e definir o tratamento das entregas antigas, preservando os dados existentes.
 
-> SECURITY: senhas atualmente usam SHA-256 sem salt. Não copie credenciais, hashes ou valores de configuração sensíveis para documentação.
+Não copie credenciais, hashes ou valores de configuração sensíveis para documentação. Senhas legadas SHA-256 sem salt são migradas para Argon2id após autenticação bem-sucedida.

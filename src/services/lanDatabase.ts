@@ -1,46 +1,52 @@
-// Camada de serviço — comunicação exclusiva com o processo principal do Electron.
+import type { BusinessOperations } from '../../shared/contracts';
+import type { DesktopLoginResultDto } from './ipcAdapter';
+export type DataActivity = 'user' | 'passive';
 
-interface AdminCreds { username: string; password: string; }
-type UpdateStatus = 'checking' | 'available' | 'downloading' | 'downloaded' | 'not-available' | 'error';
+type BusinessAdapter = Omit<BusinessOperations, 'users' | 'customers' | 'insumos' | 'formulas' | 'savedFormulas' | 'logs'> & {
+  auth: { login(u: string, p: string, force?: boolean): Promise<DesktopLoginResultDto>; logout(token?: string): Promise<any>; heartbeat(token?: string): Promise<any>; current(): Promise<DesktopLoginResultDto>; onExpired(listener: () => void): () => void };
+  data: { onChanged(cb: () => void): () => void };
+  logs: { list(filters?: Parameters<BusinessOperations['logs']['list']>[0], activity?: DataActivity): ReturnType<BusinessOperations['logs']['list']> };
+  users: { list(activity?: DataActivity): ReturnType<BusinessOperations['users']['list']>; add(input: Parameters<BusinessOperations['users']['add']>[0], token?: string): Promise<any>; update(id: number, input: Parameters<BusinessOperations['users']['update']>[1], token?: string): Promise<any>; remove(id: number, credentials?: Parameters<BusinessOperations['users']['remove']>[1], token?: string): Promise<any> };
+  customers: { list(activity?: DataActivity): ReturnType<BusinessOperations['customers']['list']>; add(input: Parameters<BusinessOperations['customers']['add']>[0], token?: string): Promise<any>; update(id: number, input: Parameters<BusinessOperations['customers']['update']>[1], token?: string): Promise<any>; remove(id: number, credentials?: Parameters<BusinessOperations['customers']['remove']>[1], token?: string): Promise<any> };
+  insumos: { list(activity?: DataActivity): ReturnType<BusinessOperations['insumos']['list']>; add(name: string, token?: string): Promise<any>; update(id: number, name: string, token?: string): Promise<any>; remove(id: number, credentials?: Parameters<BusinessOperations['insumos']['remove']>[1], token?: string): Promise<any> };
+  formulas: { list(query: Parameters<BusinessOperations['formulas']['list']>[0]): ReturnType<BusinessOperations['formulas']['list']>; get(id: number): ReturnType<BusinessOperations['formulas']['get']>; summary(month: number, year: number): ReturnType<BusinessOperations['formulas']['summary']>; add(input: Parameters<BusinessOperations['formulas']['add']>[0], token?: string): Promise<any>; update(id: number, input: Parameters<BusinessOperations['formulas']['update']>[1], token?: string): Promise<any>; updateStatus(id: number, status: string, token?: string): Promise<any>; updateDeliveryStatus(id: number, status: string, token?: string): Promise<any>; verify(id: number, token?: string): Promise<any>; updateDeliveriesStatus(ids: number[], status: string, token?: string): Promise<any>; remove(id: number, credentials?: Parameters<BusinessOperations['formulas']['remove']>[1], token?: string): Promise<any> };
+  savedFormulas: { list(activity?: DataActivity): ReturnType<BusinessOperations['savedFormulas']['list']>; add(input: Parameters<BusinessOperations['savedFormulas']['add']>[0], token?: string): Promise<any>; update(id: number, input: Parameters<BusinessOperations['savedFormulas']['update']>[1], token?: string): Promise<any>; remove(id: number, credentials?: Parameters<BusinessOperations['savedFormulas']['remove']>[1], token?: string): Promise<any> };
+};
 
-declare global {
-  interface Window {
-    electronAPI: {
-      isWindowFullscreen: () => Promise<boolean>; minimizeWindow: () => Promise<void>; leaveWindowFullscreen: () => Promise<void>; closeWindow: () => Promise<void>;
-      onWindowFullscreenChanged: (cb: (fullscreen: boolean) => void) => () => void;
-      login: (u: string, p: string, force?: boolean) => Promise<any>; logout: (token: string) => Promise<any>; sessionHeartbeat: (token: string) => Promise<any>;
-      listUsers: () => Promise<any[]>; addUser: (u: any, t?: string) => Promise<any>; updateUser: (id: number, u: any, t?: string) => Promise<any>; deleteUser: (id: number, c?: AdminCreds, t?: string) => Promise<any>;
-      listCustomers: () => Promise<any[]>; addCustomer: (c: any, t?: string) => Promise<any>; updateCustomer: (id: number, c: any, t?: string) => Promise<any>; deleteCustomer: (id: number, c?: AdminCreds, t?: string) => Promise<any>;
-      listInsumos: () => Promise<any[]>; addInsumo: (n: string, t?: string) => Promise<any>; updateInsumo: (id: number, n: string, t?: string) => Promise<any>; deleteInsumo: (id: number, c?: AdminCreds, t?: string) => Promise<any>;
-      listFormulas: () => Promise<any[]>; addFormula: (f: any, t?: string) => Promise<any>; updateFormula: (id: number, f: any, t?: string) => Promise<any>; updateFormulaStatus: (id: number, s: string, t?: string) => Promise<any>; updateFormulaDeliveryStatus: (id: number, s: string, t?: string) => Promise<any>; verifyFormula: (id: number, t?: string) => Promise<any>; updateFormulasDeliveryStatus: (ids: number[], s: string, t?: string) => Promise<any>; deleteFormula: (id: number, c?: AdminCreds, t?: string) => Promise<any>;
-      listSavedFormulas: () => Promise<any[]>; addSavedFormula: (f: any, t?: string) => Promise<any>; updateSavedFormula: (id: number, f: any, t?: string) => Promise<any>; deleteSavedFormula: (id: number, c?: AdminCreds, t?: string) => Promise<any>;
-      listLogs: (filters?: any) => Promise<{ rows: any[]; total: number }>; showMessageBox: (options: { type?: 'none' | 'info' | 'error' | 'question' | 'warning'; title?: string; message: string }) => Promise<any>; openWhatsApp: (url: string) => Promise<any>;
-      onDataChanged: (cb: () => void) => () => void; getConfig: () => Promise<any>; saveConfig: (cfg: any) => Promise<any>; testConnection: () => Promise<any>;
-      onConfirmExit: (cb: (context: { source: 'window-close' | 'logout' }) => void) => () => void; confirmAppExit: (token?: string) => Promise<void>;
-      getAppVersion: () => Promise<string>; getUpdateStatus: () => Promise<UpdateStatus>; checkForAppUpdates: () => Promise<{ success: boolean; supported: boolean }>; installAppUpdate: (token?: string) => Promise<{ success: boolean }>;
-      onUpdateStatus: (cb: (status: UpdateStatus) => void) => () => void;
-    };
-  }
+export class DataTransportUnavailableError extends Error {
+  constructor() { super('O acesso aos dados não está disponível neste modo.'); this.name = 'DataTransportUnavailableError'; }
 }
+const unavailable = (): never => { throw new DataTransportUnavailableError(); };
+const loadAdapter = async (): Promise<BusinessAdapter> => {
+  if (import.meta.env.VITE_APP_TRANSPORT === 'desktop') {
+    const { ipcBusinessAdapter } = await import('./ipcAdapter');
+    return ipcBusinessAdapter as BusinessAdapter;
+  }
+  const { httpBusinessAdapter } = await import('./httpAdapter');
+  return httpBusinessAdapter as unknown as BusinessAdapter;
+};
+const call = <T>(fn: (adapter: BusinessAdapter) => Promise<T>): Promise<T> => loadAdapter().then(fn);
+let sessionGeneration = 0;
+const sessionListeners = new Set<() => void>();
+const notifySessionChanged = () => { sessionGeneration++; for (const listener of sessionListeners) listener(); };
 
-const electron = () => window.electronAPI;
-
+/** Facade de negócio. A seleção do transporte é definida no build, sem fallback de dados. */
 export const db = {
-  window: {
-    isFullscreen: () => electron().isWindowFullscreen(),
-    minimize: () => electron().minimizeWindow(),
-    leaveFullscreen: () => electron().leaveWindowFullscreen(),
-    close: () => electron().closeWindow(),
-    onFullscreenChanged: (cb: (fullscreen: boolean) => void) => electron().onWindowFullscreenChanged(cb),
+  auth: {
+    login: async (u: string, p: string, force?: boolean) => { const res = await call(a => a.auth.login(u, p, force)); if (res.success) notifySessionChanged(); return res; },
+    logout: async (t?: string) => { try { return await call(a => a.auth.logout(t)); } finally { notifySessionChanged(); } },
+    heartbeat: (t?: string) => call(a => a.auth.heartbeat(t)),
+    current: () => call(a => a.auth.current()),
+    onExpired: (listener: () => void) => { let cleanup: (() => void) | undefined; let active = true; void loadAdapter().then(a => { if (active) cleanup = a.auth.onExpired(listener); }); return () => { active = false; cleanup?.(); }; },
+    onSessionChanged: (listener: () => void) => { sessionListeners.add(listener); return () => sessionListeners.delete(listener); },
+    sessionGeneration: () => sessionGeneration,
+    invalidateSession: notifySessionChanged,
   },
-  auth: { login: (u: string, p: string, f?: boolean) => electron().login(u, p, f), logout: (t: string) => electron().logout(t), heartbeat: (t: string) => electron().sessionHeartbeat(t) },
-  users: { list: () => electron().listUsers(), add: (u: any, t?: string) => electron().addUser(u, t), update: (id: number, u: any, t?: string) => electron().updateUser(id, u, t), remove: (id: number, c?: AdminCreds, t?: string) => electron().deleteUser(id, c, t) },
-  customers: { list: () => electron().listCustomers(), add: (c: any, t?: string) => electron().addCustomer(c, t), update: (id: number, c: any, t?: string) => electron().updateCustomer(id, c, t), remove: (id: number, c?: AdminCreds, t?: string) => electron().deleteCustomer(id, c, t) },
-  insumos: { list: () => electron().listInsumos(), add: (n: string, t?: string) => electron().addInsumo(n, t), update: (id: number, n: string, t?: string) => electron().updateInsumo(id, n, t), remove: (id: number, c?: AdminCreds, t?: string) => electron().deleteInsumo(id, c, t) },
-  formulas: { list: () => electron().listFormulas(), add: (f: any, t?: string) => electron().addFormula(f, t), update: (id: number, f: any, t?: string) => electron().updateFormula(id, f, t), updateStatus: (id: number, s: string, t?: string) => electron().updateFormulaStatus(id, s, t), updateDeliveryStatus: (id: number, s: string, t?: string) => electron().updateFormulaDeliveryStatus(id, s, t), verify: (id: number, t?: string) => electron().verifyFormula(id, t), updateDeliveriesStatus: (ids: number[], s: string, t?: string) => electron().updateFormulasDeliveryStatus(ids, s, t), remove: (id: number, c?: AdminCreds, t?: string) => electron().deleteFormula(id, c, t) },
-  savedFormulas: { list: () => electron().listSavedFormulas(), add: (f: any, t?: string) => electron().addSavedFormula(f, t), update: (id: number, f: any, t?: string) => electron().updateSavedFormula(id, f, t), remove: (id: number, c?: AdminCreds, t?: string) => electron().deleteSavedFormula(id, c, t) },
-  logs: { list: (filters?: any) => electron().listLogs(filters) },
-  data: { onChanged: (cb: () => void) => electron().onDataChanged(cb) },
-  config: { get: () => electron().getConfig(), save: (c: any) => electron().saveConfig(c), test: () => electron().testConnection() },
-  app: { onConfirmExit: (cb: (context: { source: 'window-close' | 'logout' }) => void) => electron().onConfirmExit(cb), confirmExit: (token?: string) => electron().confirmAppExit(token), version: () => electron().getAppVersion(), updateStatus: () => electron().getUpdateStatus(), checkForUpdates: () => electron().checkForAppUpdates(), onUpdateStatus: (cb: (status: UpdateStatus) => void) => electron().onUpdateStatus(cb), installUpdate: (token?: string) => electron().installAppUpdate(token) },
+  users: { list: (activity: DataActivity = 'user') => call(a => a.users.list(activity)), add: (u: Parameters<BusinessOperations['users']['add']>[0], t?: string) => call(a => a.users.add(u, t)), update: (id: number, u: Parameters<BusinessOperations['users']['update']>[1], t?: string) => call(a => a.users.update(id, u, t)), remove: (id: number, c?: Parameters<BusinessOperations['users']['remove']>[1], t?: string) => call(a => a.users.remove(id, c, t)) },
+  customers: { list: (activity: DataActivity = 'user') => call(a => a.customers.list(activity)), add: (c: Parameters<BusinessOperations['customers']['add']>[0], t?: string) => call(a => a.customers.add(c, t)), update: (id: number, c: Parameters<BusinessOperations['customers']['update']>[1], t?: string) => call(a => a.customers.update(id, c, t)), remove: (id: number, c?: Parameters<BusinessOperations['customers']['remove']>[1], t?: string) => call(a => a.customers.remove(id, c, t)) },
+  insumos: { list: (activity: DataActivity = 'user') => call(a => a.insumos.list(activity)), add: (n: string, t?: string) => call(a => a.insumos.add(n, t)), update: (id: number, n: string, t?: string) => call(a => a.insumos.update(id, n, t)), remove: (id: number, c?: Parameters<BusinessOperations['insumos']['remove']>[1], t?: string) => call(a => a.insumos.remove(id, c, t)) },
+  formulas: { list: (query: Parameters<BusinessOperations['formulas']['list']>[0]) => call(a => a.formulas.list(query)), get: (id: number) => call(a => a.formulas.get(id)), summary: (month: number, year: number) => call(a => a.formulas.summary(month, year)), add: (f: Parameters<BusinessOperations['formulas']['add']>[0], t?: string) => call(a => a.formulas.add(f, t)), update: (id: number, f: Parameters<BusinessOperations['formulas']['update']>[1], t?: string) => call(a => a.formulas.update(id, f, t)), updateStatus: (id: number, s: string, t?: string) => call(a => a.formulas.updateStatus(id, s, t)), updateDeliveryStatus: (id: number, s: string, t?: string) => call(a => a.formulas.updateDeliveryStatus(id, s, t)), verify: (id: number, t?: string) => call(a => a.formulas.verify(id, t)), updateDeliveriesStatus: (ids: number[], s: string, t?: string) => call(a => a.formulas.updateDeliveriesStatus(ids, s, t)), remove: (id: number, c?: Parameters<BusinessOperations['formulas']['remove']>[1], t?: string) => call(a => a.formulas.remove(id, c, t)) },
+  savedFormulas: { list: (activity: DataActivity = 'user') => call(a => a.savedFormulas.list(activity)), add: (f: Parameters<BusinessOperations['savedFormulas']['add']>[0], t?: string) => call(a => a.savedFormulas.add(f, t)), update: (id: number, f: Parameters<BusinessOperations['savedFormulas']['update']>[1], t?: string) => call(a => a.savedFormulas.update(id, f, t)), remove: (id: number, c?: Parameters<BusinessOperations['savedFormulas']['remove']>[1], t?: string) => call(a => a.savedFormulas.remove(id, c, t)) },
+  logs: { list: (f?: Parameters<BusinessOperations['logs']['list']>[0], activity: DataActivity = 'user') => call(a => a.logs.list(f, activity)) },
+  data: { onChanged: (cb: () => void) => { if (import.meta.env.VITE_APP_TRANSPORT !== 'desktop') return () => {}; let cleanup: (() => void) | undefined; void import('./ipcAdapter').then(m => { cleanup = m.ipcBusinessAdapter.data.onChanged(cb); }); return () => cleanup?.(); } },
 };

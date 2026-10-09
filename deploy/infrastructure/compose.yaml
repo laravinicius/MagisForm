@@ -1,0 +1,54 @@
+name: magisform-infra
+services:
+  npm:
+    image: jc21/nginx-proxy-manager:2.16.0
+    container_name: magisform-npm
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+      - "127.0.0.1:81:81"
+    volumes:
+      - npm_data:/data
+      - npm_letsencrypt:/etc/letsencrypt
+      - npm_default_tls:/etc/nginx/certs:ro
+      - ./default-https-404.conf:/data/nginx/custom/http_top.conf
+    networks:
+      - npm_control
+      - manager_edge
+    mem_limit: 1g
+    cpus: 2.0
+    logging:
+      driver: local
+      options:
+        max-size: 10m
+        max-file: "5"
+    healthcheck:
+      test: ["CMD", "/usr/bin/check-health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    depends_on:
+      default_tls:
+        condition: service_completed_successfully
+
+  default_tls:
+    image: alpine:3.21.3
+    restart: "no"
+    volumes:
+      - npm_default_tls:/certs
+    command: ["sh", "-c", "apk add --no-cache openssl >/dev/null; mkdir -p /certs; if [ ! -s /certs/default.crt ] || [ ! -s /certs/default.key ]; then openssl req -x509 -newkey rsa:2048 -sha256 -nodes -days 3650 -keyout /certs/default.key -out /certs/default.crt -subj /CN=invalid.local -addext subjectAltName=DNS:invalid.local && chmod 0600 /certs/default.key && chmod 0644 /certs/default.crt; fi"]
+
+volumes:
+  npm_data:
+    name: magisform_npm_data
+  npm_letsencrypt:
+    name: magisform_npm_letsencrypt
+  npm_default_tls:
+    name: magisform_npm_default_tls
+networks:
+  npm_control:
+    name: magisform_npm_control
+  manager_edge:
+    name: npm-management

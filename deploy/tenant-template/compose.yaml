@@ -1,0 +1,78 @@
+name: ${COMPOSE_PROJECT_NAME:?projeto da instalação ausente}
+services:
+  db:
+    image: mariadb:11.4
+    restart: unless-stopped
+    environment:
+      MARIADB_DATABASE: magisform
+      MARIADB_USER: magisform_app
+      MARIADB_PASSWORD_FILE: /run/secrets/db_password
+      MARIADB_ROOT_PASSWORD_FILE: /run/secrets/db_root_password
+    secrets:
+      - db_password
+      - db_root_password
+    volumes:
+      - mariadb_data:/var/lib/mysql
+    networks:
+      - data
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+
+  app:
+    image: ${MAGISFORM_IMAGE:?informe a imagem imutável da aplicação}
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      MAGISFORM_SERVER_HOST: 0.0.0.0
+      MAGISFORM_SERVER_PORT: 3001
+      MAGISFORM_SERVER_ORIGIN: https://${TENANT_HOST:?host ausente}
+      MAGISFORM_SERVER_TRUST_PROXY: ${TENANT_EDGE_CIDR:?CIDR exclusivo da rede de entrada ausente}
+      MAGISFORM_SERVER_INSTALLATION_NAME: ${TENANT_NAME:?nome ausente}
+      MAGISFORM_SERVER_BRAND: ${TENANT_BRAND:?marca ausente}
+      MAGISFORM_SERVER_BRAND_PRIMARY: ${TENANT_BRAND_PRIMARY:-#D95C4F}
+      MAGISFORM_SERVER_BRAND_SECONDARY: ${TENANT_BRAND_SECONDARY:-#173E35}
+      MAGISFORM_SERVER_BRAND_BACKGROUND: ${TENANT_BRAND_BACKGROUND:-#F4F1E9}
+      MAGISFORM_SERVER_BRAND_SURFACE: ${TENANT_BRAND_SURFACE:-#FFFDF8}
+      MAGISFORM_SERVER_BRAND_INK: ${TENANT_BRAND_INK:-#17201D}
+      MAGISFORM_SERVER_BRAND_MUTED: ${TENANT_BRAND_MUTED:-#5F6965}
+      MAGISFORM_SERVER_DB_HOST: db
+      MAGISFORM_SERVER_DB_PORT: 3306
+      MAGISFORM_SERVER_DB_NAME: magisform
+      MAGISFORM_SERVER_DB_USER: magisform_app
+      MAGISFORM_SERVER_DB_PASSWORD_FILE: /run/secrets/db_password
+      MAGISFORM_DB_HOST: db
+      MAGISFORM_DB_PORT: 3306
+      MAGISFORM_DB_NAME: magisform
+      MAGISFORM_DB_USER: magisform_app
+      MAGISFORM_DB_PASSWORD_FILE: /run/secrets/db_password
+    secrets:
+      - db_password
+    expose:
+      - "3001"
+    networks:
+      data: {}
+      edge:
+        aliases:
+          - ${TENANT_ALIAS:?alias ausente}
+    depends_on:
+      db:
+        condition: service_healthy
+
+secrets:
+  db_password:
+    file: ./secrets/db_password.txt
+  db_root_password:
+    file: ./secrets/db_root_password.txt
+
+volumes:
+  mariadb_data:
+
+networks:
+  data:
+    internal: true
+  edge:
+    external: true
+    name: ${TENANT_EDGE_NETWORK:?rede de entrada ausente}

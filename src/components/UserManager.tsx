@@ -24,7 +24,7 @@ export function AdminPanel({ user }: { user: User }) {
 }
 
 export function UserManager({ user }: { user: User }) {
-  const { data: users, loading, error, reload } = useData(() => db.users.list());
+  const { data: users, loading, error, reload } = useData('users', activity => db.users.list(activity));
   const { sessionToken } = useAuth();
   const emptyForm = { name: '', username: '', password: '', role: 'employee' as UserRole };
   const [form, setForm] = useState(emptyForm);

@@ -13,7 +13,7 @@ import { ConfirmModal } from './ConfirmModal';
 import { useAuth } from '../context/AuthContext';
 
 export function CustomerManager({ compact = false, onCreated, initialName }: { compact?: boolean; onCreated?: (c: Customer) => void; initialName?: string } = {}) {
-  const { data: customers, loading, error, reload } = useData(() => db.customers.list());
+  const { data: customers, loading, error, reload } = useData('customers', activity => db.customers.list(activity));
   const { sessionToken } = useAuth();
   const [form, setForm] = useState({ firstName: initialName ?? '', lastName: '', phone: '' });
   const [isDependent, setIsDependent] = useState(false);

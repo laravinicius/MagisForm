@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import { RefreshCw, Search, X, ChevronRight } from 'lucide-react';
 import { motion } from 'motion/react';
 import { db } from '../services/lanDatabase';
+import { platform } from '../services/platformFacade';
 import { Formula } from '../types';
 import { formatDateToBR, formatQuantity } from '../utils/format';
 import { useData } from '../hooks/useData';
@@ -45,7 +46,8 @@ export function getMissingReasons(f: Formula): string[] {
 }
 
 export function FormulaList({ screenKey, title, subtitle, statuses, variant = 'pending', employeeName, statusFilterOptions, showAndamento = true, showVerification = false, monthlySummary = false, deliveryStatusFilter, onSelect, onConfirm, onDeliveryBlocked, onRepeat }: { screenKey: string; title: string; subtitle: string; statuses: string[]; variant?: 'pending' | 'confirmed'; employeeName?: string; statusFilterOptions?: { value: string; label: string }[]; showAndamento?: boolean; showVerification?: boolean; monthlySummary?: boolean; deliveryStatusFilter?: string; onSelect?: (f: Formula) => void; onConfirm?: (f: Formula, missing: string[]) => void; onDeliveryBlocked?: (f: Formula, missing: string[]) => void; onRepeat?: (f: Formula) => void }) {
-  const { data: formulas, loading, error, reload } = useData(() => db.formulas.list());
+  const [cursorStack, setCursorStack] = useState<(string | null)[]>([null]);
+  const [pageNumber, setPageNumber] = useState(1);
   const { sessionToken, user } = useAuth();
   const canVerify = showVerification && user?.role === 'manager';
   const [search, setSearch] = useState('');
@@ -136,9 +138,7 @@ export function FormulaList({ screenKey, title, subtitle, statuses, variant = 'p
     if (notifyCustomer) {
       const whatsappUrl = getWhatsAppUrl(formula.customer_phone);
       if (whatsappUrl) {
-        window.electronAPI.openWhatsApp(whatsappUrl).catch(() => {
-          alert('Não foi possível abrir o WhatsApp Desktop.');
-        });
+        platform.dialogs.openWhatsApp(whatsappUrl).catch(() => {});
       } else {
         alert('Cliente sem telefone válido para contato.');
       }
@@ -146,8 +146,11 @@ export function FormulaList({ screenKey, title, subtitle, statuses, variant = 'p
     await applyDeliveryStatus(formula, 'aguardando_retirada');
   };
 
-  const all = (formulas as Formula[]) ?? [];
-  const searchLower = search.trim().toLocaleLowerCase('pt-BR');
+  const searchLower = search.trim();
+  const statusKey = statuses.join(',');
+  const query = useMemo(() => ({ cursor: cursorStack[cursorStack.length - 1], limit: 50, statuses: (statusFilter ? [statusFilter] : statusKey.split(',')) as any, deliveryStatus: deliveryStatusFilter, search: searchLower }), [cursorStack, statusFilter, statusKey, deliveryStatusFilter, searchLower]);
+  const { data: formulaPage, loading, error, reload } = useData(`formulas:${screenKey}:${JSON.stringify(query)}`, activity => db.formulas.list(query), [query]);
+  const all = formulaPage?.rows as Formula[] ?? [];
 
   const matchesHistorySearch = (formula: Formula) => {
     if (!searchLower) return true;
@@ -191,38 +194,10 @@ export function FormulaList({ screenKey, title, subtitle, statuses, variant = 'p
       || (normalizedSearch.length > 0 && (formula.customer_phone ?? '').replace(/\D/g, '').includes(normalizedSearch));
   };
 
-  const summaryYears = useMemo(() => {
-    const years = new Set<number>([new Date().getFullYear()]);
-    for (const formula of all) {
-      const year = Number(formula.delivered_at?.slice(0, 4));
-      if (Number.isInteger(year) && year > 1900) years.add(year);
-    }
-    return [...years].sort((a, b) => b - a);
-  }, [all]);
-
-  const monthlyTotal = useMemo(() => all
-    .filter(formula => formula.payment_status === 'pago' && formula.delivery_status === 'entregue')
-    .filter(formula => {
-      const date = formula.delivered_at ?? '';
-      return Number(date.slice(0, 4)) === summaryYear && Number(date.slice(5, 7)) === summaryMonth + 1;
-    })
-    .reduce((total, formula) => total + (formula.budget_items ?? [])
-      .filter(item => item.is_selected)
-      .reduce((formulaTotal, item) => formulaTotal + Number(item.value || 0), 0), 0), [all, summaryMonth, summaryYear]);
-
-  const filtered = useMemo(() => {
-    return all
-      .filter(f => statuses.includes(f.status))
-      .filter(f => !deliveryStatusFilter || f.delivery_status === deliveryStatusFilter)
-      .filter(f => !statusFilter || f.status === statusFilter)
-      .filter(f => screenKey === 'history'
-        ? matchesHistorySearch(f)
-        : (
-        f.customer_name.toLowerCase().includes(searchLower) ||
-        (f.attendant_name || '').toLowerCase().includes(searchLower) ||
-        String(f.id).includes(searchLower)
-      ));
-  }, [all, statuses, statusFilter, searchLower, deliveryStatusFilter, screenKey, employeeName]);
+  const { data: formulaSummary } = useData(`formula-summary:${summaryMonth}:${summaryYear}`, () => db.formulas.summary(summaryMonth, summaryYear), [summaryMonth, summaryYear]);
+  const summaryYears = [...new Set([new Date().getFullYear(), ...(formulaSummary?.deliveredYears ?? [])])].sort((a, b) => b - a);
+  const monthlyTotal = formulaSummary?.deliveredMonthlyTotal ?? 0;
+  const filtered = all;
 
   const paymentTint: Record<string, string> = {
     pago: 'bg-success-soft border-success-line',
@@ -274,7 +249,7 @@ export function FormulaList({ screenKey, title, subtitle, statuses, variant = 'p
           <button onClick={reload} className="ui-button ui-icon-button p-2 text-muted hover:text-ink transition-colors" title="Atualizar"><RefreshCw className="w-5 h-5" /></button>
           {statusFilterOptions && (
             <select className="ui-field px-3 py-2 bg-surface border border-control-line rounded-xl focus:ring-2 focus:ring-brand outline-none text-sm"
-              aria-label="Filtrar por status" value={statusFilter} onChange={e => setStatusFilter(e.target.value)}>
+              aria-label="Filtrar por status" value={statusFilter} onChange={e => { setStatusFilter(e.target.value); setCursorStack([null]); setPageNumber(1); }}>
               <option value="">Todos os status</option>
               {statusFilterOptions.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
             </select>
@@ -282,9 +257,9 @@ export function FormulaList({ screenKey, title, subtitle, statuses, variant = 'p
           <div className="relative">
             <Search className="absolute left-3 top-2.5 w-4 h-4 text-muted" />
             <input aria-label="Buscar fórmulas" placeholder="Buscar cliente, orçamento ou atendente" className="ui-field pl-9 pr-9 py-2 bg-surface border border-control-line rounded-xl focus:ring-2 focus:ring-brand outline-none text-sm min-w-[260px]"
-              value={search} onChange={e => setSearch(e.target.value)} />
+              value={search} onChange={e => { setSearch(e.target.value); setCursorStack([null]); setPageNumber(1); }} />
             {search && (
-              <button onClick={() => setSearch('')} title="Limpar busca"
+              <button onClick={() => { setSearch(''); setCursorStack([null]); setPageNumber(1); }} title="Limpar busca"
                 className="ui-button ui-icon-button absolute right-2 top-1/2 -translate-y-1/2 p-1 text-muted hover:text-danger transition-colors">
                 <X className="w-4 h-4" />
               </button>
@@ -405,9 +380,7 @@ export function FormulaList({ screenKey, title, subtitle, statuses, variant = 'p
                             aria-label={whatsappUrl ? `Enviar mensagem para ${f.customer_name} pelo WhatsApp` : 'Cliente sem telefone válido'}
                             onClick={(e) => {
                               e.stopPropagation();
-                              if (whatsappUrl) window.electronAPI.openWhatsApp(whatsappUrl).catch(() => {
-                                alert('Não foi possível abrir o WhatsApp Desktop.');
-                              });
+                              if (whatsappUrl) platform.dialogs.openWhatsApp(whatsappUrl).catch(() => {});
                             }}
                             className="ui-button ui-icon-button w-8 h-8 rounded-lg border border-success-line bg-success-soft flex items-center justify-center text-success hover:bg-success-strong transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
                           >
@@ -507,6 +480,15 @@ export function FormulaList({ screenKey, title, subtitle, statuses, variant = 'p
               <p className="font-medium">Nenhuma fórmula nesta lista ainda.</p>
             </div>
           )}
+        </div>
+        <div className="flex items-center justify-between gap-3 pt-3" aria-label="Paginação de fórmulas">
+          <p className="text-sm text-muted">Página {pageNumber} · {formulaPage?.total ?? 0} fórmulas neste filtro</p>
+          <div className="flex gap-2">
+            <button type="button" className="ui-button ui-button-secondary px-3 py-2" disabled={pageNumber === 1 || loading}
+              onClick={() => { setCursorStack(stack => stack.slice(0, -1)); setPageNumber(number => Math.max(1, number - 1)); }}>Anterior</button>
+            <button type="button" className="ui-button ui-button-secondary px-3 py-2" disabled={!formulaPage?.nextCursor || loading}
+              onClick={() => { if (!formulaPage?.nextCursor) return; setCursorStack(stack => [...stack, formulaPage.nextCursor]); setPageNumber(number => number + 1); }}>Próxima</button>
+          </div>
         </div>
         </div>
       )}

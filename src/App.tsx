@@ -7,7 +7,8 @@ import {
   CheckCircle, History, AlertTriangle, Bookmark, ChevronDown, FlaskConical, Cog, X, Download,
 } from 'lucide-react';
 import { motion, AnimatePresence, MotionConfig } from 'motion/react';
-import { db } from './services/lanDatabase';
+import { DataTransportUnavailableError, db } from './services/lanDatabase';
+import { platform } from './services/platformFacade';
 import { TitleBar } from './components/TitleBar';
 import { User, Formula, USER_ROLE_LABELS } from './types';
 import { BrandLogo } from './components/Logo';
@@ -65,12 +66,12 @@ function UpdateIndicator({ sessionToken, placement = 'floating', collapsed = fal
 
   useEffect(() => {
     let active = true;
-    Promise.all([db.app.version(), db.app.updateStatus()]).then(([currentVersion, currentStatus]) => {
+    Promise.all([platform.app.version(), platform.app.updateStatus()]).then(([currentVersion, currentStatus]) => {
       if (!active) return;
       setVersion(currentVersion);
       setStatus(currentStatus);
     }).catch(() => {});
-    const cleanup = db.app.onUpdateStatus(nextStatus => {
+    const cleanup = platform.app.onUpdateStatus(nextStatus => {
       setStatus(nextStatus);
       if (nextStatus !== 'checking' && nextStatus !== 'downloading') setManualCheckInProgress(false);
       if (nextStatus === 'downloaded' && installRequestedRef.current) setShowUpdateReady(true);
@@ -122,7 +123,7 @@ function UpdateIndicator({ sessionToken, placement = 'floating', collapsed = fal
     }
     installRequestedRef.current = true;
     setInstallRequested(true);
-    const result = await db.app.installUpdate(sessionToken ?? undefined).catch(() => ({ success: false }));
+    const result = await platform.app.installUpdate(sessionToken ?? undefined).catch(() => ({ success: false }));
     if (!result.success) { installRequestedRef.current = false; setInstallRequested(false); }
   };
 
@@ -130,7 +131,7 @@ function UpdateIndicator({ sessionToken, placement = 'floating', collapsed = fal
     setShowUpdateReady(false);
     installRequestedRef.current = true;
     setInstallRequested(true);
-    const result = await db.app.installUpdate(sessionToken ?? undefined).catch(() => ({ success: false }));
+    const result = await platform.app.installUpdate(sessionToken ?? undefined).catch(() => ({ success: false }));
     if (!result.success) { installRequestedRef.current = false; setInstallRequested(false); }
   };
 
@@ -140,7 +141,7 @@ function UpdateIndicator({ sessionToken, placement = 'floating', collapsed = fal
     manualCheckRequestedRef.current = true;
     setUpdateNotice('');
     if (noticeTimerRef.current) clearTimeout(noticeTimerRef.current);
-    const result = await db.app.checkForUpdates().catch(() => ({ success: false, supported: true }));
+    const result = await platform.app.checkForUpdates().catch(() => ({ success: false, supported: false }));
     if (!result.success) {
       setManualCheckInProgress(false);
       manualCheckRequestedRef.current = false;
@@ -256,12 +257,14 @@ function ExitConfirmModal({ show, context, onConfirm, onCancel }: {
 
 function AppInner() {
   const { user, sessionToken, setAuth, clearAuth } = useAuth();
-  const { clearDrafts } = useFormDraft();
+  const { clearDrafts, hasDrafts } = useFormDraft();
+  const isWeb = import.meta.env.VITE_APP_TRANSPORT === 'web';
+  const [authReady, setAuthReady] = useState(!isWeb);
   const [setupMode, setSetupMode] = useState(false);
   const [loginConflict, setLoginConflict] = useState(false);
   const [activeTab, setActiveTab] = useState<'dashboard' | 'admin' | 'recipe' | 'pending' | 'confirmed' | 'formulaDetail' | 'confirmedDetail' | 'history' | 'historyDetail' | 'cancelled' | 'cancelledDetail' | 'customers' | 'insumos' | 'savedFormulas' | 'settings'>('dashboard');
   const [confirmedStage, setConfirmedStage] = useState<'em_producao' | 'aguardando_retirada'>('em_producao');
-  const [isSidebarOpen, setIsSidebarOpen] = useState(true);
+  const [isSidebarOpen, setIsSidebarOpen] = useState(() => window.innerWidth >= 900);
   const [formulasMenuOpen, setFormulasMenuOpen] = useState(true);
   const [managementMenuOpen, setManagementMenuOpen] = useState(true);
   const [loginForm, setLoginForm] = useState({ username: '', password: '' });
@@ -308,9 +311,7 @@ function AppInner() {
   const INACTIVITY_TIMEOUT_MS = 5 * 60 * 1000;
 
   const handleInactivityLogout = useCallback(async () => {
-    if (sessionToken) {
-      await db.auth.logout(sessionToken).catch(() => {});
-    }
+    await db.auth.logout(sessionToken ?? undefined).catch(() => {});
     clearDrafts();
     clearAuth();
     setPartialPaymentAmounts({});
@@ -339,7 +340,21 @@ function AppInner() {
   }, [viewingFormula]);
 
   useEffect(() => {
-    if (!user || setupMode || !sessionToken) return;
+    const formulaId = Number(new URLSearchParams(window.location.search).get('formulaId'));
+    if (!user || !Number.isSafeInteger(formulaId) || formulaId <= 0) return;
+    let active = true;
+    void db.formulas.get(formulaId).then(formula => {
+      if (!active || !formula) return;
+      setViewingFormula(formula);
+      setActiveTab(formula.status === 'confirmed' ? 'confirmedDetail' : formula.status === 'delivered' ? 'historyDetail' : formula.status === 'cancelled' ? 'cancelledDetail' : 'formulaDetail');
+    }).catch(error => {
+      if (active) setToast({ msg: error instanceof Error ? error.message : 'Não foi possível abrir a fórmula solicitada.', type: 'info' });
+    });
+    return () => { active = false; };
+  }, [user, window.location.search]);
+
+  useEffect(() => {
+    if (!user || setupMode || (!isWeb && !sessionToken)) return;
 
     const activityEvents = ['mousemove', 'keydown', 'click', 'touchstart'] as const;
 
@@ -353,7 +368,28 @@ function AppInner() {
       activityEvents.forEach(event => window.removeEventListener(event, handleActivity));
       if (inactivityTimerRef.current) clearTimeout(inactivityTimerRef.current);
     };
-  }, [user, setupMode, sessionToken, resetInactivityTimer]);
+  }, [user, setupMode, sessionToken, resetInactivityTimer, isWeb]);
+
+  useEffect(() => {
+    if (!isWeb) return;
+    let active = true;
+    void db.auth.current().then(res => {
+      if (!active) return;
+      if (res.success && res.user) setAuth(res.user, null);
+      setAuthReady(true);
+    }).catch(() => {
+      if (!active) return;
+      setLoginError('Não foi possível verificar a sessão. Confira a conexão e tente entrar novamente.');
+      setAuthReady(true);
+    });
+    return () => { active = false; };
+  }, [isWeb, setAuth]);
+
+  useEffect(() => db.auth.onExpired(() => {
+    db.auth.invalidateSession();
+    clearDrafts(); clearAuth(); setPartialPaymentAmounts({}); setSetupMode(false);
+    setLoginError('Sua sessão expirou ou foi encerrada em outro dispositivo. Entre novamente.');
+  }), [clearAuth, clearDrafts]);
 
   const showToast = (msg: string, type: 'success' | 'info' = 'success') => {
     setToast({ msg, type });
@@ -375,8 +411,8 @@ function AppInner() {
       } else {
         setLoginError(res.error ?? 'Erro ao fazer login.');
       }
-    } catch {
-      setLoginError('Erro ao conectar ao servidor.');
+    } catch (error) {
+      setLoginError(error instanceof DataTransportUnavailableError ? error.message : 'Erro ao conectar ao servidor.');
     } finally {
       setLoginLoading(false);
     }
@@ -394,9 +430,9 @@ function AppInner() {
 
   const handleExitConfirm = async () => {
     if (exitContext === 'window-close') {
-      await db.app.confirmExit(sessionToken ?? undefined);
+      await platform.app.confirmExit(sessionToken ?? undefined);
     } else if (exitContext === 'logout') {
-      if (sessionToken) await db.auth.logout(sessionToken).catch(() => {});
+      await db.auth.logout(sessionToken ?? undefined).catch(() => {});
       clearDrafts();
       clearAuth();
       setPartialPaymentAmounts({});
@@ -426,7 +462,7 @@ function AppInner() {
   const isHeartbeatRunningRef = useRef(false);
 
   useEffect(() => {
-    if (!user || setupMode || !sessionToken) return;
+    if (!user || setupMode || (!isWeb && !sessionToken)) return;
     let timer: ReturnType<typeof setInterval> | null = null;
 
     const runHeartbeat = async () => {
@@ -435,7 +471,7 @@ function AppInner() {
       const start = performance.now();
       try {
         heartbeatMetrics.callCount++;
-        const res = await db.auth.heartbeat(sessionToken);
+        const res = await db.auth.heartbeat(sessionToken ?? undefined);
         const duration = performance.now() - start;
         heartbeatMetrics.totalDurationMs += duration;
         heartbeatMetrics.lastDurationMs = duration;
@@ -471,20 +507,37 @@ function AppInner() {
       if (timer) clearInterval(timer);
       isHeartbeatRunningRef.current = false;
     };
-  }, [user, setupMode, sessionToken]);
+  }, [user, setupMode, sessionToken, isWeb]);
 
   useEffect(() => {
-    const cleanup = db.app.onConfirmExit((context) => {
+    if (!isWeb || !user || !hasDrafts) return;
+    const warnBeforeUnload = (event: BeforeUnloadEvent) => { event.preventDefault(); event.returnValue = ''; };
+    window.addEventListener('beforeunload', warnBeforeUnload);
+    return () => window.removeEventListener('beforeunload', warnBeforeUnload);
+  }, [isWeb, user, hasDrafts]);
+
+  useEffect(() => {
+    if (!isWeb) return;
+    const adaptNavigationWidth = () => setIsSidebarOpen(window.innerWidth >= 900);
+    window.addEventListener('resize', adaptNavigationWidth);
+    adaptNavigationWidth();
+    return () => window.removeEventListener('resize', adaptNavigationWidth);
+  }, [isWeb]);
+
+  useEffect(() => {
+    const cleanup = platform.app.onConfirmExit((context) => {
       setExitContext(context.source);
       setShowExitConfirm(true);
     });
     return cleanup;
   }, []);
 
+  if (isWeb && !authReady) return <div className="flex-1 grid place-items-center bg-canvas text-muted">Verificando sessão…</div>;
+
   if (!user) {
     return (
       <>
-        <UpdateIndicator sessionToken={sessionToken} />
+        {!isWeb && <UpdateIndicator sessionToken={sessionToken} />}
         <div className="ui-login flex-1 min-h-0 flex flex-col items-center p-4 bg-canvas">
           <motion.div
             initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}
@@ -506,6 +559,7 @@ function AppInner() {
                 <input type="text" required autoFocus
                   className="ui-field w-full px-4 py-2 rounded-lg border border-control-line focus:ring-2 focus:ring-brand outline-none transition-all"
                   value={loginForm.username}
+                  autoComplete="username"
                   onChange={e => setLoginForm({ ...loginForm, username: e.target.value })}
                  id="mf-app-1" />
               </div>
@@ -514,6 +568,7 @@ function AppInner() {
                 <input type="password" required
                   className="ui-field w-full px-4 py-2 rounded-lg border border-control-line focus:ring-2 focus:ring-brand outline-none transition-all"
                   value={loginForm.password}
+                  autoComplete="current-password"
                   onChange={e => setLoginForm({ ...loginForm, password: e.target.value })}
                   onKeyDown={e => {
                     if (e.key === 'Enter' && !loginLoading) {
@@ -534,12 +589,12 @@ function AppInner() {
               >
                 {loginLoading ? 'Conectando...' : 'Entrar'}
               </button>
-              <button type="button"
+              {!isWeb && <button type="button"
                 onClick={() => { setExitContext('window-close'); setShowExitConfirm(true); }}
                 className="ui-button w-full py-2.5 rounded-lg border border-control-line font-semibold text-sm text-ink hover:bg-canvas transition-colors"
               >
                 Sair
-              </button>
+              </button>}
             </form>
             </div>
           </motion.div>
@@ -682,7 +737,7 @@ function AppInner() {
             {user.role !== 'employee' && (
               <NavItem icon={<Settings />} label="Administração" active={isTabActive('admin')} onClick={() => setActiveTab('admin')} collapsed={!isSidebarOpen} />
             )}
-            <UpdateIndicator sessionToken={sessionToken} placement="sidebar" collapsed={!isSidebarOpen} />
+            {!isWeb && <UpdateIndicator sessionToken={sessionToken} placement="sidebar" collapsed={!isSidebarOpen} />}
           </div>
 
           <div className="shrink-0 p-4" style={{ borderTop: '1px solid rgba(255,255,255,0.1)' }}>
@@ -818,7 +873,7 @@ export default function App() {
     <MotionConfig reducedMotion="user">
     <AuthProvider>
       <FormDraftProvider>
-        <div className="h-screen overflow-hidden bg-canvas flex flex-col pt-[30px]" onKeyDown={handleEnterAsTab}>
+        <div className={`h-screen overflow-hidden bg-canvas flex flex-col ${import.meta.env.VITE_APP_TRANSPORT === 'desktop' ? 'pt-[30px]' : ''}`} onKeyDown={handleEnterAsTab}>
           <TitleBar />
           <AppInner />
         </div>

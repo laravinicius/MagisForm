@@ -3,13 +3,8 @@
 -- Reconstructed from migrations 0001-0020 (migration_final.sql) — reflects
 -- the actual final state of the schema, not a hand-maintained snapshot.
 --
--- SECURITY: the seeded admin credential below is a REAL password that has
--- been exposed in plaintext in migration history. Rotate it immediately
--- after first login regardless of running this script. Long-term: stop
--- hardcoding real credentials in versioned SQL; generate a random
--- one-time password at provisioning and force a change on first login.
--- Also consider migrating password storage from plain SHA-256 to
--- bcrypt/argon2id (salted, slow hash) — see review notes.
+-- No seeding de credenciais administrativas. O administrador inicial é
+-- criado pelo fluxo explícito de provisionamento.
 
 CREATE DATABASE IF NOT EXISTS magisform
   CHARACTER SET utf8mb4
@@ -21,7 +16,7 @@ CREATE TABLE IF NOT EXISTS users (
   id         INT AUTO_INCREMENT PRIMARY KEY,
   name       VARCHAR(255) NOT NULL,
   username   VARCHAR(50)  NOT NULL UNIQUE,
-  password   VARCHAR(64)  NOT NULL COMMENT 'SHA-256 hex',
+  password   VARCHAR(255) NOT NULL COMMENT 'Formato legado SHA-256 ou hash codificado',
   role       ENUM('admin','manager','pharmacist','employee') NOT NULL DEFAULT 'employee',
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
@@ -125,12 +120,16 @@ CREATE TABLE IF NOT EXISTS sessions (
   id         INT AUTO_INCREMENT PRIMARY KEY,
   user_id    INT          NOT NULL,
   token      VARCHAR(64)  NOT NULL UNIQUE,
+  policy     ENUM('desktop_local','hosted') NOT NULL DEFAULT 'desktop_local',
   last_seen  TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  expires_at DATETIME NULL,
+  absolute_expires_at DATETIME NULL,
   FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 ) ENGINE=InnoDB;
 
 -- Indexes
+CREATE INDEX idx_formulas_created_id ON formulas(created_at, id);
 CREATE INDEX idx_users_updated     ON users(updated_at);
 CREATE INDEX idx_customers_updated ON customers(updated_at);
 CREATE INDEX idx_insumos_updated   ON insumos(updated_at);
@@ -144,8 +143,9 @@ CREATE INDEX idx_saved_formula_items_saved_formula_id ON saved_formula_items(sav
 CREATE INDEX idx_saved_formula_items_insumo_id ON saved_formula_items(insumo_id);
 CREATE INDEX idx_saved_formula_budget_items_saved_formula_id ON saved_formula_budget_items(saved_formula_id);
 
-CREATE INDEX idx_sessions_user ON sessions(user_id);
+CREATE UNIQUE INDEX uq_sessions_user_id ON sessions(user_id);
 CREATE INDEX idx_sessions_last_seen ON sessions(last_seen);
+CREATE INDEX idx_sessions_expires_at ON sessions(expires_at);
 
 CREATE TABLE IF NOT EXISTS action_logs (
   id         INT AUTO_INCREMENT PRIMARY KEY,
@@ -164,12 +164,19 @@ CREATE INDEX idx_action_logs_user    ON action_logs(user_id);
 CREATE INDEX idx_action_logs_action  ON action_logs(action);
 CREATE INDEX idx_action_logs_entity  ON action_logs(entity);
 
--- Seed admin user (matches migration 0001_create_admin_user.sql)
--- ROTATE THIS PASSWORD after first deployment — see security note at top of file.
-INSERT IGNORE INTO users (name, username, password, role)
-VALUES (
-  'Administrador',
-  'administrador',
-  '131e106e665d164d6ad066cde74382bcf304667766eba93562128dc4da1a4ec4',
-  'admin'
-);
+-- Metadados de schema. A versão inicial é registrada exclusivamente pelo
+-- comando explícito de bootstrap; upgrades registram checksums ao concluir.
+CREATE TABLE IF NOT EXISTS schema_version (
+  singleton  TINYINT NOT NULL PRIMARY KEY,
+  version    INT NOT NULL,
+  source     ENUM('bootstrap','upgrade') NOT NULL,
+  checksum   CHAR(64) NOT NULL,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  CONSTRAINT chk_schema_version_singleton CHECK (singleton = 1)
+) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS schema_upgrade_history (
+  version      INT NOT NULL PRIMARY KEY,
+  checksum     CHAR(64) NOT NULL,
+  completed_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+) ENGINE=InnoDB;

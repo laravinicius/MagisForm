@@ -24,7 +24,7 @@ function LogoImage({ sizePx, rounded = 'rounded-xl', fillWidth = false, variant 
     );
   }
   return (
-    <img src={src} alt={BRAND.name}
+    <img src={src} alt={document.documentElement.dataset.publicBrand || BRAND.name}
       className={`object-contain ${fillWidth ? 'w-full h-auto' : 'shrink-0'}`}
       style={fillWidth ? { maxWidth: sizePx } : { width: sizePx, height: sizePx }}
       onError={() => !useFallback && setUseFallback(true)} />
@@ -32,20 +32,22 @@ function LogoImage({ sizePx, rounded = 'rounded-xl', fillWidth = false, variant 
 }
 
 export function BrandLogo({ size = 'md' }: { size?: 'icon' | 'md' | 'lg' | 'sidebar' }) {
+  const publicBrand = document.documentElement.dataset.publicBrand;
+  const caption = publicBrand && publicBrand !== BRAND.name ? publicBrand : BRAND.caption;
   if (size === 'icon') return <LogoImage sizePx={40} variant="white" />;
 
   if (size === 'sidebar') {
     return (
       <div className="w-full flex flex-col items-center gap-2">
         <LogoImage sizePx={200} fillWidth variant="white" />
-        <span className="text-xs text-nav-muted font-medium tracking-widest uppercase leading-tight">{BRAND.caption}</span>
+        <span className="text-xs text-nav-muted font-medium tracking-widest uppercase leading-tight">{caption}</span>
       </div>
     );
   }
 
   if (size === 'lg') {
     return (
-      <LogoImage sizePx={300} fillWidth variant="original" />
+      <div className="flex flex-col items-center gap-2"><LogoImage sizePx={300} fillWidth variant="original" />{caption !== BRAND.caption && <span className="text-sm text-muted font-medium tracking-wide">{caption}</span>}</div>
     );
   }
 
@@ -58,7 +60,7 @@ export function BrandLogo({ size = 'md' }: { size?: 'icon' | 'md' | 'lg' | 'side
             <span key={i} style={{ color: part.color }}>{part.text}</span>
           ))}
         </div>
-        <div className="text-[10px] text-muted font-medium tracking-widest uppercase leading-tight">{BRAND.caption}</div>
+        <div className="text-[10px] text-muted font-medium tracking-widest uppercase leading-tight">{caption}</div>
       </div>
     </div>
   );

@@ -17,9 +17,9 @@ import { InsumoManager } from './InsumoManager';
 import { UnitCycle, INGREDIENT_UNITS, BUDGET_UNITS } from './UnitCycle';
 
 export function RecipeForm({ user, template, formula, confirmed = false, readOnly = false, initialLocked = true, partialPaymentAmount: savedPartialPaymentAmount = '', onPartialPaymentAmountChange, onClearTemplate, onComplete }: { user: User; template?: Formula | null; formula?: Formula | null; confirmed?: boolean; readOnly?: boolean; initialLocked?: boolean; partialPaymentAmount?: string; onPartialPaymentAmountChange?: (value: string | null) => void; onClearTemplate?: () => void; onComplete: (dest: 'pending' | 'confirmed') => void }) {
-  const { data: customers, reload: reloadCustomers } = useData(() => db.customers.list());
-  const { data: insumos, reload: reloadInsumos } = useData(() => db.insumos.list());
-  const { data: savedFormulas } = useData(() => db.savedFormulas.list());
+  const { data: customers, reload: reloadCustomers } = useData('customers', activity => db.customers.list(activity));
+  const { data: insumos, reload: reloadInsumos } = useData('insumos', activity => db.insumos.list(activity));
+  const { data: savedFormulas } = useData('savedFormulas', activity => db.savedFormulas.list(activity));
   const { sessionToken } = useAuth();
   const [selectedCustomerId, setSelectedCustomerId] = useState<number | ''>('');
   const [items, setItems] = useState<FormulaItem[]>([]);
@@ -299,7 +299,7 @@ export function RecipeForm({ user, template, formula, confirmed = false, readOnl
     return message || 'Não foi possível salvar. Verifique a conexão com o servidor e tente novamente.';
   };
 
-  const buildPayload = (status: string, soloSelected = false) => {
+  const buildPayload = (status: import('../../shared/contracts').FormulaStatus, soloSelected = false) => {
     const payloadBudgetItems = soloSelected && selectedBudgetIndex !== null
       ? budgetItems.filter((_, i) => i === selectedBudgetIndex).map(bi => ({ ...bi, is_selected: true }))
       : budgetItems.map((bi, i) => ({ ...bi, is_selected: selectedBudgetIndex === i }));

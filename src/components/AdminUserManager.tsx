@@ -6,7 +6,7 @@ import { LoadingState, ErrorState } from './Feedback';
 import { COLORS } from '../../config/branding';
 
 export function AdminUserManager() {
-  const { data: users, loading, error, reload } = useData(() => db.users.list());
+  const { data: users, loading, error, reload } = useData('users', activity => db.users.list(activity));
   const [form, setForm] = useState({ name: '', username: '', password: '' });
   const [editingId, setEditingId] = useState<number | null>(null);
   const [saving, setSaving] = useState(false);

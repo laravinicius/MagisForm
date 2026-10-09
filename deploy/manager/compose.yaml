@@ -1,0 +1,86 @@
+name: magisform-manager
+services:
+  api:
+    image: ${MAGISFORM_MANAGER_IMAGE:?informe imagem imutável do painel}
+    command: ["node", "dist-server/manager/index.js"]
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      MAGISFORM_MANAGER_ROLE: api
+      MAGISFORM_MANAGER_ORIGIN: ${MAGISFORM_MANAGER_ORIGIN:?informe a origem HTTPS do painel}
+      MAGISFORM_MANAGER_TRUST_PROXY: ${MAGISFORM_MANAGER_TRUST_PROXY:?informe a sub-rede confiável do NPM}
+      MAGISFORM_MANAGER_APPROVED_IMAGES: ${MAGISFORM_MANAGER_APPROVED_IMAGES:?informe digests aprovados, separados por vírgula}
+      MAGISFORM_MANAGER_AGENT_ORIGIN: http://agent:3101
+      MAGISFORM_MANAGER_AGENT_TOKEN_FILE: /run/secrets/agent_token
+      MAGISFORM_MANAGER_OPERATOR_FILE: /run/secrets/operator
+      MAGISFORM_MANAGER_PORT: 3003
+      MAGISFORM_MANAGER_WEB_ROOT: /opt/magisform-runtime/dist-manager
+    secrets:
+      - operator
+      - agent_token
+    expose:
+      - "3003"
+    networks:
+      - manager_control
+      - manager_edge
+    depends_on:
+      agent:
+        condition: service_healthy
+    mem_limit: 384m
+    cpus: 1.0
+    logging:
+      driver: local
+      options:
+        max-size: 10m
+        max-file: "5"
+
+  agent:
+    image: ${MAGISFORM_MANAGER_IMAGE:?informe imagem imutável do painel}
+    command: ["node", "dist-server/manager/index.js"]
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      MAGISFORM_MANAGER_ROLE: agent
+      MAGISFORM_MANAGER_ROOT: ${MAGISFORM_MANAGER_ROOT:?informe diretório absoluto persistente do agente}
+      MAGISFORM_MANAGER_RUNTIME_ROOT: /opt/magisform-runtime
+      MAGISFORM_MANAGER_AGENT_PORT: 3101
+      MAGISFORM_MANAGER_AGENT_TOKEN_FILE: /run/secrets/agent_token
+      MAGISFORM_MANAGER_APPROVED_IMAGES: ${MAGISFORM_MANAGER_APPROVED_IMAGES:?informe digests aprovados, separados por vírgula}
+    secrets:
+      - agent_token
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ${MAGISFORM_MANAGER_ROOT}:${MAGISFORM_MANAGER_ROOT}
+    group_add:
+      - ${DOCKER_SOCKET_GID:?informe o GID do socket Docker}
+    expose:
+      - "3101"
+    networks:
+      - manager_control
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3101/health/live').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 15s
+      timeout: 3s
+      retries: 4
+      start_period: 10s
+    mem_limit: 384m
+    cpus: 1.0
+    logging:
+      driver: local
+      options:
+        max-size: 10m
+        max-file: "5"
+
+secrets:
+  operator:
+    file: ${MAGISFORM_MANAGER_STATE_DIR:?informe diretório de estado do painel}/operator.json
+  agent_token:
+    file: ${MAGISFORM_MANAGER_STATE_DIR:?informe diretório de estado do painel}/agent-token.txt
+
+networks:
+  manager_control:
+    name: magisform_manager_control
+    internal: true
+  manager_edge:
+    name: ${MAGISFORM_MANAGER_EDGE_NETWORK:-npm-management}
+    external: true

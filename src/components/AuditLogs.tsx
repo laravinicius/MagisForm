@@ -50,7 +50,7 @@ const formatLogDate = (ts: string) => {
 };
 
 export function AuditLogs() {
-  const { data: users } = useData(() => db.users.list());
+  const { data: users } = useData('users', activity => db.users.list(activity));
   const [filters, setFilters] = useState<{
     userId?: number | '';
     action?: string;
@@ -72,7 +72,7 @@ export function AuditLogs() {
     pageSize: PAGE_SIZE,
   };
 
-  const { data, loading, error, reload } = useData(() => db.logs.list(payload), [JSON.stringify(payload)]);
+  const { data, loading, error, reload } = useData(`logs:${JSON.stringify(payload)}`, activity => db.logs.list(payload, activity));
 
   const set = (patch: Partial<typeof filters>) => setFilters(f => ({ ...f, ...patch, page: 1 }));
   const resetFilters = () => setFilters({ userId: '', action: '', entity: '', from: '', to: '', search: '', page: 1 });

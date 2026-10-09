@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, ReactNode } from 'react';
+import React, { createContext, useContext, useState, ReactNode, useCallback } from 'react';
 import { User } from '../types';
 
 interface AuthContextValue {
@@ -14,15 +14,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [sessionToken, setSessionToken] = useState<string | null>(null);
 
-  const setAuth = (u: User | null, token: string | null) => {
+  const setAuth = useCallback((u: User | null, token: string | null) => {
     setUser(u);
     setSessionToken(token);
-  };
+  }, []);
 
-  const clearAuth = () => {
+  const clearAuth = useCallback(() => {
     setUser(null);
     setSessionToken(null);
-  };
+  }, []);
 
   return (
     <AuthContext.Provider value={{ user, sessionToken, setAuth, clearAuth }}>

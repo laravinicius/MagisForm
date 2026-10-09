@@ -1,253 +1,67 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
-import { db } from '../services/lanDatabase';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { db, type DataActivity } from '../services/lanDatabase';
 
-interface PerfMetrics {
-  ipcDurationMs: number;
-  reloadCount: number;
-  sqlQueryCount: number;
-  recordsReturned: number;
-  concurrentLoads: number;
-  lastError: string | null;
-}
-
-const globalMetrics: PerfMetrics = {
-  ipcDurationMs: 0,
-  reloadCount: 0,
-  sqlQueryCount: 0,
-  recordsReturned: 0,
-  concurrentLoads: 0,
-  lastError: null,
-};
-
+interface PerfMetrics { ipcDurationMs: number; reloadCount: number; sqlQueryCount: number; recordsReturned: number; concurrentLoads: number; lastError: string | null }
+const globalMetrics: PerfMetrics = { ipcDurationMs: 0, reloadCount: 0, sqlQueryCount: 0, recordsReturned: 0, concurrentLoads: 0, lastError: null };
 let activeLoads = 0;
+export function getPerfMetrics(): PerfMetrics { return { ...globalMetrics }; }
+export function resetPerfMetrics(): void { Object.assign(globalMetrics, { ipcDurationMs: 0, reloadCount: 0, sqlQueryCount: 0, recordsReturned: 0, concurrentLoads: 0, lastError: null }); activeLoads = 0; }
 
-export function getPerfMetrics(): PerfMetrics {
-  return { ...globalMetrics };
+interface Resource<T> { data: T | null; loading: boolean; error: string | null; subscribers: Set<() => void>; inFlight: Promise<T> | null; timer: ReturnType<typeof setInterval> | null; unlisten: (() => void) | null }
+const resources = new Map<string, Resource<any>>();
+function resource<T>(key: string): Resource<T> {
+  let value = resources.get(key) as Resource<T> | undefined;
+  if (!value) { value = { data: null, loading: true, error: null, subscribers: new Set(), inFlight: null, timer: null, unlisten: null }; resources.set(key, value); }
+  return value;
 }
-
-export function resetPerfMetrics(): void {
-  globalMetrics.ipcDurationMs = 0;
-  globalMetrics.reloadCount = 0;
-  globalMetrics.sqlQueryCount = 0;
-  globalMetrics.recordsReturned = 0;
-  globalMetrics.concurrentLoads = 0;
-  globalMetrics.lastError = null;
-  activeLoads = 0;
-}
-
-interface ResourceState<T> {
-  data: T | null;
-  loading: boolean;
-  error: string | null;
-  subscribers: Set<number>;
-  inFlightPromise: Promise<T> | null;
-  pollingTimer: ReturnType<typeof setInterval> | null;
-  listenerCleanup: (() => void) | null;
-  lastFetcher: (() => Promise<T>) | null;
-}
-
-const resourceRegistry = new Map<string, ResourceState<any>>();
-let subscriberIdCounter = 0;
-
-function getResourceKey(fetcher: () => Promise<any>): string {
-  const str = fetcher.toString();
-  const match = str.match(/db\.(\w+)\.list\(\)/);
-  if (match) return match[1];
-  return `unknown_${Math.random().toString(36).slice(2, 9)}`;
-}
-
-function getOrCreateResource<T>(key: string, fetcher: () => Promise<T>): ResourceState<T> {
-  let resource = resourceRegistry.get(key) as ResourceState<T> | undefined;
-  if (!resource) {
-    resource = {
-      data: null,
-      loading: true,
-      error: null,
-      subscribers: new Set(),
-      inFlightPromise: null,
-      pollingTimer: null,
-      listenerCleanup: null,
-      lastFetcher: fetcher,
-    };
-    resourceRegistry.set(key, resource);
-  }
-  return resource;
-}
-
-function startPolling<T>(resource: ResourceState<T>, fetcher: () => Promise<T>): void {
-  if (resource.pollingTimer) return;
-  resource.pollingTimer = setInterval(() => {
-    triggerLoad(resource, fetcher, true);
-  }, 10_000);
-}
-
-function stopPolling(resource: ResourceState<any>): void {
-  if (resource.pollingTimer) {
-    clearInterval(resource.pollingTimer);
-    resource.pollingTimer = null;
-  }
-}
-
-function startListener<T>(resource: ResourceState<T>, fetcher: () => Promise<T>): void {
-  if (resource.listenerCleanup) return;
-  resource.listenerCleanup = db.data.onChanged(() => {
-    triggerLoad(resource, fetcher, true);
-  });
-}
-
-function stopListener(resource: ResourceState<any>): void {
-  if (resource.listenerCleanup) {
-    resource.listenerCleanup();
-    resource.listenerCleanup = null;
-  }
-}
-
-async function triggerLoad<T>(
-  resource: ResourceState<T>,
-  fetcher: () => Promise<T>,
-  silent: boolean
-): Promise<T | null> {
-  if (resource.inFlightPromise) {
-    return resource.inFlightPromise;
-  }
-
+function notify<T>(entry: Resource<T>) { entry.subscribers.forEach(listener => listener()); }
+async function load<T>(entry: Resource<T>, fetcher: (activity: DataActivity) => Promise<T>, silent: boolean, activity: DataActivity): Promise<T | null> {
+  if (entry.inFlight) return entry.inFlight;
+  if (!silent) { entry.loading = true; notify(entry); }
   activeLoads++;
-  globalMetrics.concurrentLoads = Math.max(globalMetrics.concurrentLoads, activeLoads);
-
-  const start = performance.now();
-  resource.inFlightPromise = (async () => {
+  const started = performance.now();
+  entry.inFlight = (async () => {
     try {
-      const result = await fetcher();
-      const duration = performance.now() - start;
-      globalMetrics.ipcDurationMs += duration;
+      const data = await fetcher(activity);
+      globalMetrics.ipcDurationMs += performance.now() - started;
       globalMetrics.reloadCount++;
       globalMetrics.lastError = null;
-
-      if (Array.isArray(result)) {
-        globalMetrics.recordsReturned += result.length;
-      } else if (result && typeof result === 'object') {
-        globalMetrics.recordsReturned += 1;
-      }
-
-      resource.data = result;
-      resource.error = null;
-      resource.loading = false;
-      notifySubscribers(resource);
-      return result;
-    } catch (e: any) {
-      globalMetrics.lastError = e.message ?? 'Erro desconhecido';
-      resource.error = globalMetrics.lastError;
-      resource.loading = false;
-      notifySubscribers(resource);
-      throw e;
-    } finally {
-      activeLoads--;
-      resource.inFlightPromise = null;
-    }
+      globalMetrics.recordsReturned += Array.isArray(data) ? data.length : data && typeof data === 'object' ? 1 : 0;
+      entry.data = data; entry.error = null; entry.loading = false; notify(entry);
+      return data;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Erro desconhecido';
+      globalMetrics.lastError = message; entry.error = message; entry.loading = false; notify(entry); throw error;
+    } finally { activeLoads--; globalMetrics.concurrentLoads = Math.max(globalMetrics.concurrentLoads, activeLoads); entry.inFlight = null; }
   })();
-
-  if (!silent) {
-    resource.loading = true;
-    notifySubscribers(resource);
-  }
-
-  return resource.inFlightPromise;
+  return entry.inFlight;
 }
 
-function notifySubscribers<T>(resource: ResourceState<T>): void {
-  for (const id of resource.subscribers) {
-    const subscriber = subscriberMap.get(id);
-    if (subscriber) {
-      subscriber.forceUpdate();
-    }
-  }
-}
-
-interface Subscriber {
-  forceUpdate: () => void;
-}
-
-const subscriberMap = new Map<number, Subscriber>();
-
-export function useData<T>(fetcher: () => Promise<T>, deps: any[] = []) {
-  const [, setTick] = useState(0);
-  const subscriberIdRef = useRef(0);
-  const resourceKeyRef = useRef('');
-  const fetcherRef = useRef(fetcher);
-  const depsRef = useRef(deps);
-
-  fetcherRef.current = fetcher;
-  depsRef.current = deps;
-
-  const forceUpdate = useCallback(() => {
-    setTick(t => t + 1);
-  }, []);
-
+/** Cache apenas em memória, identificado por instalação, sessão e chave de recurso. */
+export function useData<T>(key: string, fetcher: (activity: DataActivity) => Promise<T>, deps: unknown[] = []) {
+  const [, redraw] = useState(0);
+  const forceUpdate = useCallback(() => redraw(value => value + 1), []);
+  const resourceKey = useMemo(() => `${window.location.origin}:${db.auth.sessionGeneration()}:${key}`, [key, db.auth.sessionGeneration()]);
+  useEffect(() => db.auth.onSessionChanged(forceUpdate), [forceUpdate]);
   useEffect(() => {
-    const key = getResourceKey(fetcher);
-    resourceKeyRef.current = key;
-    const resource = getOrCreateResource(key, fetcher);
-    const id = ++subscriberIdCounter;
-    subscriberIdRef.current = id;
-
-    resource.subscribers.add(id);
-    subscriberMap.set(id, { forceUpdate });
-
-    if (!resource.listenerCleanup) {
-      startListener(resource, fetcher);
-    }
-    if (!resource.pollingTimer) {
-      startPolling(resource, fetcher);
-    }
-
-    if (resource.inFlightPromise) {
-      resource.inFlightPromise.finally(() => forceUpdate());
-    } else if (resource.data === null && resource.error === null) {
-      triggerLoad(resource, fetcher, false);
-    }
-
+    const entry = resource<T>(resourceKey);
+    entry.subscribers.add(forceUpdate);
+    if (!entry.unlisten) entry.unlisten = db.data.onChanged(() => { void load(entry, fetcher, true, 'passive').catch(() => {}); });
+    if (!entry.timer) entry.timer = setInterval(() => { void load(entry, fetcher, true, 'passive').catch(() => {}); }, 10_000);
+    if (!entry.inFlight && entry.data === null && entry.error === null) void load(entry, fetcher, false, 'user').catch(() => {});
     return () => {
-      resource.subscribers.delete(id);
-      subscriberMap.delete(id);
-
-      if (resource.subscribers.size === 0) {
-        stopPolling(resource);
-        stopListener(resource);
-        resourceRegistry.delete(key);
+      entry.subscribers.delete(forceUpdate);
+      if (entry.subscribers.size === 0) {
+        if (entry.timer) clearInterval(entry.timer);
+        entry.timer = null; entry.unlisten?.(); entry.unlisten = null;
+        if (resources.get(resourceKey) === entry) resources.delete(resourceKey);
       }
     };
-  }, [forceUpdate]);
-
-  const load = useCallback(async (silent = false) => {
-    const key = resourceKeyRef.current;
-    const resource = resourceRegistry.get(key) as ResourceState<T> | undefined;
-    if (!resource) return;
-
-    const currentFetcher = fetcherRef.current;
-    resource.lastFetcher = currentFetcher;
-    await triggerLoad(resource, currentFetcher, silent);
-  }, []);
-
-  useEffect(() => {
-    const key = resourceKeyRef.current;
-    const resource = resourceRegistry.get(key) as ResourceState<T> | undefined;
-    if (resource && resource.lastFetcher !== fetcherRef.current) {
-      resource.lastFetcher = fetcherRef.current;
-      triggerLoad(resource, fetcherRef.current, false);
-    }
-  }, deps);
-
-  const key = resourceKeyRef.current;
-  const resource = resourceRegistry.get(key) as ResourceState<T> | undefined;
-
-  if (!resource) {
-    return { data: null, loading: true, error: null, reload: load };
-  }
-
-  return {
-    data: resource.data,
-    loading: resource.loading,
-    error: resource.error,
-    reload: load,
-  };
+  // fetcher identity is intentionally controlled by explicit resource key and deps.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [resourceKey, forceUpdate]);
+  const entry = resources.get(resourceKey) as Resource<T> | undefined;
+  const reload = useCallback(async (silent = false) => { const current = resources.get(resourceKey) as Resource<T> | undefined; if (current) await load(current, fetcher, silent, 'user'); }, [resourceKey, ...deps]);
+  useEffect(() => { void reload().catch(() => {}); }, [reload]);
+  return { data: entry?.data ?? null, loading: entry?.loading ?? true, error: entry?.error ?? null, reload };
 }

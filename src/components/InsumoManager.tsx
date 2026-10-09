@@ -13,7 +13,7 @@ import { ConfirmModal } from './ConfirmModal';
 import { useAuth } from '../context/AuthContext';
 
 export function InsumoManager({ compact = false, onCreated, initialName }: { compact?: boolean; onCreated?: (m: Insumo) => void; initialName?: string } = {}) {
-  const { data: insumos, loading, error, reload } = useData(() => db.insumos.list());
+  const { data: insumos, loading, error, reload } = useData('insumos', activity => db.insumos.list(activity));
   const { sessionToken } = useAuth();
   const [name, setName] = useState((initialName ?? '').toUpperCase());
   const [editingRow, setEditingRow] = useState<number | null>(null);

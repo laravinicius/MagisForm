@@ -9,13 +9,14 @@ MagisForm é uma aplicação desktop Electron para fluxo de manipulação farmac
 ```text
 electron/main.ts       → janela, IPC, configuração e eventos de mudança
 electron/preload.ts    → bridge isolada do renderer
-electron/db.ts         → queries MariaDB, sessões, autorização e auditoria
+core/db.ts             → queries MariaDB, sessões, autorização e auditoria
 src/App.tsx            → autenticação, navegação e composição
 src/components/        → telas e módulos de negócio
 src/services/lanDatabase.ts → facade tipada IPC/HTTP
 src/hooks/useData.ts   → carregamento, polling e atualização
 src/context/           → sessão e rascunho de fórmula
-database.sql           → schema operacional
+database.sql           → schema consolidado de instalação limpa
+database/upgrades/     → upgrades versionados aplicados somente por comando explícito
 docs/                  → mapas arquiteturais e decisões
 ```
 
@@ -40,9 +41,13 @@ Interface e comentários novos devem permanecer em português brasileiro. Todos 
 
 ## Database Schema
 
-- `database.sql` = single source of truth. **Always update it.**
-- **Do NOT create migration files** — the database will be recreated from `database.sql` on every change.
-- Passwords = SHA-256 hex (`hash()` in `electron/db.ts`). Roles: `admin` / `employee`.
+- `database.sql` = schema consolidado atual para bootstrap limpo. **Sempre atualize-o.**
+- Upgrades novos e versionados ficam exclusivamente em `database/upgrades/`; `migrations/` é histórico e nunca deve ser executado pelo bootstrap, upgrade ou runtime.
+- Bootstrap e upgrade são comandos explícitos. É proibido executar DDL automaticamente ao abrir a janela, conectar o pool ou atender requests.
+- Comandos operacionais: `npm run db:bootstrap`, `npm run db:preflight` e `npm run db:upgrade`; consulte `docs/database.md` e ADR-002.
+- Upgrade exige preflight estrutural, versão/checksum e lock exclusivo; schema desconhecido deve falhar sem alteração. Mudanças DDL devem permitir retomada ou exigir restore ensaiado.
+- Não incluir senha administrativa padrão em `database.sql`; criação do primeiro administrador pertence ao provisionamento explícito.
+- Coluna `users.password` comporta hash codificado. A transição de SHA-256 legado e o rehash ficam sujeitos à compatibilidade de release registrada na etapa correspondente.
 
 ---
 
@@ -51,7 +56,7 @@ Interface e comentários novos devem permanecer em português brasileiro. Todos 
 | Command | Description |
 |---------|-------------|
 | `npm run dev` | Vite on port 3000 bound to `0.0.0.0` (for Electron) |
-| `npm run build` | `vite build --configLoader native && electron-builder` (Windows: `dir` package, no NSIS) |
+| `npm run build` | Vite/Electron build and local Windows `dir` + NSIS packaging; does not publish |
 | `npm run lint` | `tsc --noEmit` (only verification; no test framework) |
 | `npm run clean` | Remove `dist/`, `dist-electron/`, `release/` e `../magisform-release/` |
 
@@ -59,7 +64,7 @@ Interface e comentários novos devem permanecer em português brasileiro. Todos 
 
 ## Key Implementation Details
 
-- **Session**: Single active session/user. Heartbeat every 2s client-side; stale cleanup every 60s server-side (TTL 120s).
+- **Session**: Single active session/user. Electron heartbeat every 30s, local idle TTL 120s and absolute TTL 30 days; hosted policy uses 15min idle and 12h absolute. Cleanup runs every 60s.
 - **Force login**: Returns `conflict: true` if logged in elsewhere; pass `force: true` to override.
 - **Setup mode**: o login especial de configuração retorna `setupMode: true` e mostra apenas Settings. Não copie credenciais para documentação; consulte o código quando esse fluxo precisar mudar.
 - **Exit confirmation**: Blocks close/logout until modal confirmed (`app:confirm-exit` / `app:exit-confirmed`).
