@@ -165,11 +165,6 @@ for attempt in $(seq 1 90); do
 done
 [[ ${state:-} == healthy ]] || fail 'Nginx Proxy Manager não ficou saudável; volumes e configurações foram preservados.'
 
-log 'Configurando credenciais protegidas, certificado e Proxy Host do painel'
-docker run --rm --network magisform_npm_control --volume "$STATE_DIR:/state" \
-  "$manager_image" node dist-server/manager/bootstrap-npm.js "$manager_host" "$install_mode" "$certificate_email" >/dev/null
-chmod 0600 "$STATE_DIR/npm-credentials.json"
-
 if [[ $operator_created == true ]]; then
   log 'Criando operador inicial; guarde agora a senha e o segredo TOTP exibidos'
   credentials="$(docker run --rm --user 1000:1000 --volume "$STATE_DIR:/state" -e MAGISFORM_MANAGER_STATE=/state \
@@ -179,8 +174,24 @@ else
   log 'Conta do operador já existe; preservada sem reexibir credenciais.'
 fi
 
+log 'Inicializando credenciais protegidas do NPM'
+docker run --rm --network magisform_npm_control --volume "$STATE_DIR:/state" \
+  "$manager_image" node dist-server/manager/bootstrap-npm.js --credentials-only "$install_mode" "$certificate_email" >/dev/null
+chmod 0600 "$STATE_DIR/npm-credentials.json"
+
 log 'Subindo API do painel e executor restrito'
 docker compose --env-file "$INSTALL_DIR/.env" --file "$MANAGER_COMPOSE" up -d
+for attempt in $(seq 1 90); do
+  state="$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' magisform-manager-api-1 2>/dev/null || true)"
+  [[ $state == healthy ]] && break
+  [[ $state == unhealthy || $state == exited ]] && break
+  sleep 2
+done
+[[ ${state:-} == healthy ]] || fail 'A API do painel não ficou saudável; NPM, estado e volumes foram preservados.'
+
+log 'Configurando certificado e Proxy Host do painel no NPM'
+docker run --rm --network magisform_npm_control --volume "$STATE_DIR:/state" \
+  "$manager_image" node dist-server/manager/bootstrap-npm.js "$manager_host" "$install_mode" "$certificate_email" >/dev/null
 docker compose --env-file "$INSTALL_DIR/.env" --file "$MANAGER_COMPOSE" ps
 
 cat > /usr/local/bin/magisform <<'EOF'

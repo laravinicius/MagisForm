@@ -94,6 +94,7 @@ export class NpmClient {
     if (existing) {
       if (existing.forward_host !== input.forwardHost || existing.forward_port !== input.forwardPort) throw new Error('O domínio já pertence a um Proxy Host com destino diferente.');
       if (existing.certificate_id !== input.certificateId || existing.ssl_forced !== input.secure) throw new Error('O domínio já pertence a um Proxy Host com configuração TLS divergente.');
+      await this.request('PUT', `/nginx/proxy-hosts/${existing.id}`, payload);
       return existing.id;
     }
     const created = await this.request<{ id: number }>('POST', '/nginx/proxy-hosts', payload);

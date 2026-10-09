@@ -17,6 +17,10 @@ await mkdir(stateDir, { recursive: true, mode: 0o700 });
 const initialAdminPassword = await readFile(path.join(stateDir, 'npm-initial-admin-password.txt'), 'utf8').then((value) => value.trim());
 if (initialAdminPassword.length < 32) throw new Error('Senha inicial protegida do NPM ausente ou inválida.');
 await bootstrapNpmCredentials(baseUrl, credentialsFile, initialAdminPassword, mode === 'public' ? email : undefined);
+if (host === '--credentials-only') {
+  console.log('Credenciais do NPM inicializadas.');
+  process.exit(0);
+}
 const npm = await NpmClient.fromFile(baseUrl, credentialsFile);
 let certificateId: number;
 if (mode === 'public') {

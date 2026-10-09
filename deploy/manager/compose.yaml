@@ -25,6 +25,12 @@ services:
       - agent_token
     expose:
       - "3003"
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3003/health/live').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 15s
+      timeout: 3s
+      retries: 4
+      start_period: 10s
     networks:
       - manager_control
       - manager_edge
