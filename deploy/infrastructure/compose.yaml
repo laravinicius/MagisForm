@@ -5,8 +5,8 @@ services:
     container_name: magisform-npm
     restart: unless-stopped
     ports:
-      - "80:80"
-      - "443:443"
+      - "${MAGISFORM_HTTP_BIND_IP:-0.0.0.0}:${MAGISFORM_HTTP_PORT:-80}:80"
+      - "${MAGISFORM_HTTPS_BIND_IP:-0.0.0.0}:${MAGISFORM_HTTPS_PORT:-443}:443"
       - "127.0.0.1:81:81"
     volumes:
       - npm_data:/data
@@ -50,5 +50,7 @@ volumes:
 networks:
   npm_control:
     name: magisform_npm_control
+    internal: true
   manager_edge:
     name: npm-management
+    external: true

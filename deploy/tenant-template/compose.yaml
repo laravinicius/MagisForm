@@ -23,12 +23,14 @@ services:
 
   app:
     image: ${MAGISFORM_IMAGE:?informe a imagem imutável da aplicação}
+    pull_policy: never
     restart: unless-stopped
     environment:
       NODE_ENV: production
       MAGISFORM_SERVER_HOST: 0.0.0.0
       MAGISFORM_SERVER_PORT: 3001
-      MAGISFORM_SERVER_ORIGIN: https://${TENANT_HOST:?host ausente}
+      MAGISFORM_SERVER_ORIGIN: ${TENANT_ORIGIN:?origem HTTPS ausente}
+      MAGISFORM_SERVER_ALLOW_HOST_WITHOUT_PORT: ${TENANT_ALLOW_HOST_WITHOUT_PORT:-false}
       MAGISFORM_SERVER_TRUST_PROXY: ${TENANT_EDGE_CIDR:?CIDR exclusivo da rede de entrada ausente}
       MAGISFORM_SERVER_INSTALLATION_NAME: ${TENANT_NAME:?nome ausente}
       MAGISFORM_SERVER_BRAND: ${TENANT_BRAND:?marca ausente}

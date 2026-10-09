@@ -10,10 +10,10 @@ import { matchingTotpStep } from './totp.js';
 import type { CreateTenantInput, TenantAction, TenantControl } from './contracts.js';
 
 type Operator = { username: string; passwordHash: string; totpSecret: string };
-type ApiConfig = { origin: string; secure: boolean; trustProxy: false | string[]; agentOrigin: string; agentToken: string; port: number; operatorFile: string; approvedImages: string[]; webRoot?: string };
+type ApiConfig = { origin: string; secure: boolean; allowHostWithoutPort?: boolean; trustProxy: false | string[]; agentOrigin: string; agentToken: string; port: number; operatorFile: string; approvedImages: string[]; testDomainSuffix?: string; originPortSuffix?: string; publicMode?: boolean; webRoot?: string };
 type BuildOptions = { config: ApiConfig; control?: TenantControl; operator?: Operator };
 const loginBody = z.object({ username: z.string().trim().min(1).max(100), password: z.string().min(1).max(255), totp: z.string().regex(/^\d{6}$/) });
-const createBody = z.object({ id: z.string().regex(/^[a-z][a-z0-9-]{1,30}$/), host: z.string().trim().toLowerCase().min(4).max(253), name: z.string().trim().regex(/^[\p{L}\p{N}][\p{L}\p{N} .,'()&-]{0,79}$/u), adminName: z.string().trim().min(1).max(120), adminUsername: z.string().trim().regex(/^[A-Za-z0-9_.-]{1,50}$/), image: z.string().regex(/^[a-z0-9][a-z0-9._/:@-]*@sha256:[a-f0-9]{64}$/) });
+const createBody = z.object({ id: z.string().regex(/^[a-z][a-z0-9-]{1,30}$/), host: z.string().trim().toLowerCase().min(4).max(253), name: z.string().trim().regex(/^[\p{L}\p{N}][\p{L}\p{N} .,'()&-]{0,79}$/u), adminName: z.string().trim().min(1).max(120), adminUsername: z.string().trim().regex(/^[A-Za-z0-9_.-]{1,50}$/), image: z.string().regex(/^(?:[a-z0-9][a-z0-9._/:@-]*@sha256:[a-f0-9]{64}|magisform:git-[a-f0-9]{7,40})$/) });
 const actionBody = z.object({ action: z.enum(['start', 'stop', 'restart']) });
 const cookieOpts = (secure: boolean) => ({ path: '/', httpOnly: false, secure, sameSite: 'strict' as const });
 const safeEqual = (a: string, b: string) => { const left = Buffer.from(a); const right = Buffer.from(b); return left.length === right.length && timingSafeEqual(left, right); };
@@ -41,7 +41,9 @@ export async function buildManagerApi({ config, control, operator: suppliedOpera
   app.addHook('onRequest', async (request, reply) => {
     const remoteAddress = request.raw.socket.remoteAddress?.replace(/^::ffff:/, '');
     if (request.url.split('?')[0] === '/health/live' && (remoteAddress === '::1' || remoteAddress === '127.0.0.1' || Boolean(remoteAddress?.startsWith('127.')))) return;
-    if (config.secure && (request.headers.host !== new URL(config.origin).host || request.protocol !== 'https')) return reply.code(404).send({ error: { code: 'NOT_FOUND', message: 'Recurso não encontrado.', requestId: request.id } });
+    const canonicalOrigin = new URL(config.origin);
+    const hostMatches = request.headers.host === canonicalOrigin.host || (config.allowHostWithoutPort && request.headers.host === canonicalOrigin.hostname);
+    if (config.secure && (!hostMatches || request.protocol !== 'https')) return reply.code(404).send({ error: { code: 'NOT_FOUND', message: 'Recurso não encontrado.', requestId: request.id } });
     if (request.method === 'POST' && request.url.startsWith('/api/')) {
       if (request.headers.origin !== allowedOrigin) return reply.code(403).send({ error: { code: 'FORBIDDEN', message: 'Origem inválida.', requestId: request.id } });
       const csrf = request.cookies[csrfCookie]; const header = request.headers['x-csrf-token'];
@@ -128,7 +130,7 @@ export async function buildManagerApi({ config, control, operator: suppliedOpera
     request.log.info({ requestId: request.id, operator: operatorFor(request), action: 'tenant_package_generated', tenant: input.id }, 'Pacote Docker gerado');
     return { data: result };
   });
-  app.get('/api/manager/v1/config', { preHandler: authenticated }, async () => ({ data: { approvedImages: config.approvedImages } }));
+  app.get('/api/manager/v1/config', { preHandler: authenticated }, async () => ({ data: { approvedImages: config.approvedImages, testDomainSuffix: config.testDomainSuffix ?? '.magisform.test', originPortSuffix: config.originPortSuffix ?? '', publicMode: config.publicMode ?? false } }));
   app.get('/health/live', async () => ({ data: { status: 'ok' } }));
   const webRoot = path.resolve(config.webRoot ?? 'dist-manager');
   const serveFile = async (request: import('fastify').FastifyRequest, reply: import('fastify').FastifyReply) => {

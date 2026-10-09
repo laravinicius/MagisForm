@@ -6,11 +6,12 @@ import path from 'node:path';
 import { timingSafeEqual } from 'node:crypto';
 import { z } from 'zod';
 import type { CreateTenantInput, ManagedTenant, TenantAction, TenantControl, TenantPackage } from './contracts.js';
+import { NpmClient } from './npm.js';
 
 const execFileAsync = promisify(execFile);
 const idPattern = /^[a-z][a-z0-9-]{1,30}$/;
 const hostPattern = /^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/;
-const imagePattern = /^[a-z0-9][a-z0-9._/:@-]*@sha256:[a-f0-9]{64}$/;
+const imagePattern = /^(?:[a-z0-9][a-z0-9._/:@-]*@sha256:[a-f0-9]{64}|magisform:git-[a-f0-9]{7,40})$/;
 const namePattern = /^[\p{L}\p{N}][\p{L}\p{N} .,'()&-]{0,79}$/u;
 const schema = z.object({
   id: z.string().regex(idPattern), host: z.string().toLowerCase().regex(hostPattern),
@@ -20,9 +21,13 @@ const schema = z.object({
 });
 const actionSchema = z.object({ action: z.enum(['start', 'stop', 'restart']) });
 
-type CatalogEntry = { host: string; alias: string; image: string; brand?: string; status: string; createdAt: string; compose: string };
+type CatalogEntry = { host: string; alias: string; image: string; brand?: string; status: string; createdAt: string; compose: string; proxyHostId?: number };
 type Catalog = Record<string, CatalogEntry>;
-type AgentConfig = { root: string; token: string; port: number; approvedImages: string[] };
+type AgentConfig = {
+  root: string; token: string; port: number; approvedImages: string[];
+  expectedImageId?: string; publicMode?: boolean; certificateEmail?: string; localCertificateId?: number;
+  testDomainSuffix?: string; originPortSuffix?: string; npmApiOrigin?: string; npmCredentialsFile?: string;
+};
 
 export function validateTenantCreation(input: unknown, approvedImages: string[]): CreateTenantInput {
   const value = schema.parse(input);
@@ -54,6 +59,9 @@ export function createTenantControl(config: AgentConfig): TenantControl {
   const catalogFile = path.join(config.root, 'deploy', 'tenants', 'catalog.json');
   const tenantRoot = path.join(config.root, 'deploy', 'tenants');
   let creationInProgress = false;
+  const npmClient = config.npmApiOrigin && config.npmCredentialsFile
+    ? NpmClient.fromFile(config.npmApiOrigin, config.npmCredentialsFile)
+    : null;
 
   const validateInput = (input: unknown): CreateTenantInput => validateTenantCreation(input, config.approvedImages);
   const entryFor = async (id: string) => {
@@ -89,18 +97,38 @@ export function createTenantControl(config: AgentConfig): TenantControl {
 
     async create(rawInput: CreateTenantInput) {
       const input = validateInput(rawInput);
+      if (!config.publicMode && config.testDomainSuffix && !input.host.endsWith(config.testDomainSuffix)) throw new Error(`No modo local, use um domínio terminado em ${config.testDomainSuffix}.`);
+      if (!npmClient) throw new Error('Integração do Nginx Proxy Manager não configurada.');
+      if (config.expectedImageId) {
+        const { stdout: imageId } = await run('docker', ['image', 'inspect', '--format', '{{.Id}}', input.image], config.root);
+        if (imageId.trim() !== config.expectedImageId) throw new Error('A imagem local aprovada não corresponde ao ID imutável instalado.');
+      }
       if (creationInProgress) throw Object.assign(new Error('Outro provisionamento está em andamento.'), { statusCode: 409 });
       creationInProgress = true;
       try {
         const catalog = await readCatalog(catalogFile);
         const existing = catalog[input.id];
-        if (existing && (existing.status === 'provisioned' || existing.host !== input.host || existing.image !== input.image || existing.brand !== input.name)) throw Object.assign(new Error('O identificador já pertence a uma instalação e não pode ser substituído.'), { statusCode: 409 });
+        if (existing && (existing.host !== input.host || existing.image !== input.image || existing.brand !== input.name)) throw Object.assign(new Error('O identificador já pertence a uma instalação e não pode ser substituído.'), { statusCode: 409 });
         if (Object.entries(catalog).some(([id, item]) => id !== input.id && item.host.toLowerCase() === input.host)) throw Object.assign(new Error('O domínio já está cadastrado.'), { statusCode: 409 });
-        if (existing && !['prepared', 'provisioning'].includes(existing.status)) throw Object.assign(new Error('Estado intermediário não pode ser retomado automaticamente.'), { statusCode: 409 });
+        if (existing && !['prepared', 'provisioning', 'provisioned'].includes(existing.status)) throw Object.assign(new Error('Estado intermediário não pode ser retomado automaticamente.'), { statusCode: 409 });
+        const certificateId = await (await npmClient).ensureCertificate({ host: input.host, publicMode: config.publicMode ?? false, email: config.certificateEmail });
         const args = ['scripts/provision-tenant.mjs', input.id, input.host, '--image', input.image, '--brand', input.name, '--admin-name', input.adminName, '--admin-user', input.adminUsername, '--apply', '--json-result'];
-        const { stdout } = await run(process.execPath, args, config.root, { MAGISFORM_PROVISION_ROOT: config.root });
+        const { stdout } = await run(process.execPath, args, config.root, {
+          MAGISFORM_PROVISION_ROOT: config.root,
+          MAGISFORM_SERVER_ORIGIN_PORT_SUFFIX: config.originPortSuffix ?? '',
+        });
         const result = JSON.parse(stdout.trim()) as { id: string; host: string; name: string; admin: { name: string; username: string; password: string } };
         if (result.id !== input.id || result.host !== input.host || !result.admin?.password) throw new Error('Provisionamento não retornou a confirmação esperada.');
+        const network = `npm-${input.id}`;
+        const { stdout: networkInfo } = await run('docker', ['network', 'inspect', network], config.root);
+        const networkJson = JSON.parse(networkInfo)[0] as { Containers?: Record<string, { Name: string }> };
+        if (!Object.values(networkJson.Containers ?? {}).some((container) => container.Name === 'magisform-npm')) await run('docker', ['network', 'connect', network, 'magisform-npm'], config.root);
+        const proxyHostId = await (await npmClient).ensureProxyHost({ host: input.host, forwardHost: `mf-${input.id}`, forwardPort: 3001, certificateId, secure: true });
+        const catalogAfter = await readCatalog(catalogFile);
+        catalogAfter[input.id].proxyHostId = proxyHostId;
+        const nextCatalog = `${catalogFile}.${process.pid}.tmp`;
+        await fs.writeFile(nextCatalog, JSON.stringify(catalogAfter, null, 2) + '\n', { flag: 'wx', mode: 0o600 });
+        await fs.rename(nextCatalog, catalogFile);
         return result.admin;
       } finally { creationInProgress = false; }
     },

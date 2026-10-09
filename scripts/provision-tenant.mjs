@@ -24,10 +24,10 @@ const theme = {
   background: option('--background', '#F4F1E9'), surface: option('--surface', '#FFFDF8'),
   ink: option('--ink', '#17201D'), muted: option('--muted', '#5F6965'),
 };
-const usage = 'Uso: npm run tenant:provision -- <id> <host> --image <repo@sha256:digest> [--brand "Nome público"] [--primary #RRGGBB] [--secondary #RRGGBB] [--background #RRGGBB] [--surface #RRGGBB] [--ink #RRGGBB] [--muted #RRGGBB] [--apply]';
+const usage = 'Uso: npm run tenant:provision -- <id> <host> --image <repo@sha256:digest|magisform:git-commit> [--brand "Nome público"] [--primary #RRGGBB] [--secondary #RRGGBB] [--background #RRGGBB] [--surface #RRGGBB] [--ink #RRGGBB] [--muted #RRGGBB] [--apply]';
 if (!/^[a-z][a-z0-9-]{1,30}$/.test(id ?? '') || !/^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/.test(host ?? '') || !image || /[\r\n\0]/.test(image)) throw new Error(usage);
 if (typeof brand !== 'string' || !brand.trim() || brand.trim().length > 80 || /[\r\n\0<>]/.test(brand) || Object.values(theme).some((color) => !/^#[0-9a-fA-F]{6}$/.test(color ?? ''))) throw new Error('Marca ou tema público inválido. Use nome simples e cores hexadecimais #RRGGBB.');
-if (!/@sha256:[a-f0-9]{64}$/.test(image)) throw new Error('Informe o digest imutável sha256 da imagem.');
+if (!(/@sha256:[a-f0-9]{64}$/.test(image) || /^magisform:git-[a-f0-9]{7,40}$/.test(image))) throw new Error('Informe um digest sha256 aprovado ou a imagem local identificada pelo commit.');
 const install = path.join(root, 'deploy/tenants', id);
 const alias = `mf-${id}`;
 const network = `npm-${id}`;
@@ -70,7 +70,9 @@ if (!edgeCidr) {
   }
 }
 if (!edgeCidr) throw new Error('Não foi possível reservar uma sub-rede /24 exclusiva para esta instalação.');
-const values = { COMPOSE_PROJECT_NAME: project, MAGISFORM_IMAGE: image, TENANT_HOST: host, TENANT_NAME: brand.trim(), TENANT_BRAND: brand.trim(), TENANT_BRAND_PRIMARY: theme.primary, TENANT_BRAND_SECONDARY: theme.secondary, TENANT_BRAND_BACKGROUND: theme.background, TENANT_BRAND_SURFACE: theme.surface, TENANT_BRAND_INK: theme.ink, TENANT_BRAND_MUTED: theme.muted, TENANT_ALIAS: alias, TENANT_EDGE_NETWORK: network, TENANT_EDGE_CIDR: edgeCidr };
+const portSuffix = process.env.MAGISFORM_SERVER_ORIGIN_PORT_SUFFIX ?? '';
+if (portSuffix && !/^:\d{1,5}$/.test(portSuffix)) throw new Error('Sufixo de porta de origem inválido.');
+const values = { COMPOSE_PROJECT_NAME: project, MAGISFORM_IMAGE: image, TENANT_HOST: host, TENANT_ORIGIN: `https://${host}${portSuffix}`, TENANT_ALLOW_HOST_WITHOUT_PORT: String(Boolean(portSuffix)), TENANT_NAME: brand.trim(), TENANT_BRAND: brand.trim(), TENANT_BRAND_PRIMARY: theme.primary, TENANT_BRAND_SECONDARY: theme.secondary, TENANT_BRAND_BACKGROUND: theme.background, TENANT_BRAND_SURFACE: theme.surface, TENANT_BRAND_INK: theme.ink, TENANT_BRAND_MUTED: theme.muted, TENANT_ALIAS: alias, TENANT_EDGE_NETWORK: network, TENANT_EDGE_CIDR: edgeCidr };
 const escapeEnv = (value) => String(value).replace(/\\/g, '\\\\').replace(/\n/g, '\\n');
 const writePrivate = async (file, data) => {
   await fs.writeFile(file, data, { flag: 'wx', mode: 0o600 });
@@ -103,6 +105,11 @@ if (catalog[id]) {
     await fs.rename(migratedCatalog, catalogFile);
   }
   if (!apply || catalog[id].status === 'provisioned') {
+    if (jsonResult && catalog[id].status === 'provisioned') {
+      const saved = Object.fromEntries((await fs.readFile(path.join(install, 'secrets/initial-admin.txt'), 'utf8')).trim().split(/\r?\n/).map((line) => { const split = line.indexOf('='); return [line.slice(0, split), line.slice(split + 1)]; }));
+      process.stdout.write(JSON.stringify({ id, host, name: brand.trim(), admin: { name: saved.nome, username: saved.usuario, password: saved.senha } }) + '\n');
+      process.exit(0);
+    }
     console.log(`Instalação ${id} já existe; nenhum arquivo ou segredo foi alterado.`);
     console.log(`Compose: ${path.join(install, 'compose.yaml')}`);
     console.log(`Alias NPM: ${alias}:3001; host: ${host}`);
@@ -153,8 +160,8 @@ if (apply) {
   const preflight = checked(['compose', 'run', '--rm', '--no-deps', 'app', 'node', 'scripts/database-schema.mjs', 'preflight']);
   if (/banco magisform vazio; elegível para bootstrap/.test(preflight)) {
     checked(['compose', 'run', '--rm', '--no-deps', 'app', 'node', 'scripts/database-schema.mjs', 'bootstrap']);
-  } else if (!/schema v1 válido \(bootstrap\)/.test(preflight)) {
-    throw new Error('Preflight não reconheceu schema bootstrap v1; nenhuma alteração de schema foi aplicada.');
+  } else if (!/schema v2 válido \(bootstrap\)/.test(preflight)) {
+    throw new Error('Preflight não reconheceu schema bootstrap v2; nenhuma alteração de schema foi aplicada.');
   }
   const prompt = args.includes('--admin-name') && args.includes('--admin-user') ? null : readline.createInterface({ input: stdin, output: stdout });
   try {
@@ -196,7 +203,7 @@ if (jsonResult) {
 } else {
   console.log(`Instalação ${id} preparada em ${install}.`);
   console.log(`Host ${host} → rede ${network}, alias ${alias}:3001.`);
-  console.log(`Rede de entrada ${network} (${edgeCidr}); conecte o NPM a essa rede. Proxy Host manual: HTTP para ${alias}:3001.`);
+  console.log(`Rede de entrada ${network} (${edgeCidr}); o executor conecta o NPM e configura o Proxy Host automaticamente.`);
   console.log(`Instruções persistentes: ${path.join(install, 'NPM-Proxy-Host.md')}`);
   if (!apply) console.log('Para executar bootstrap e criar o administrador após validar imagem/ambiente, repita o mesmo comando com --apply.');
 }

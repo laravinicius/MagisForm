@@ -8,13 +8,14 @@ RUN npm run build:manager
 FROM node:22.14.0-alpine AS manager
 ENV NODE_ENV=production
 WORKDIR /opt/magisform-runtime
-RUN apk add --no-cache docker-cli docker-cli-compose
+RUN apk add --no-cache docker-cli docker-cli-compose openssl
 COPY package.json package-lock.json ./
 RUN npm ci --omit=dev && npm cache clean --force
 COPY --from=build --chown=node:node /app/dist-server ./dist-server
 COPY --from=build --chown=node:node /app/dist-manager ./dist-manager
 COPY --from=build --chown=node:node /app/deploy/tenant-template ./deploy/tenant-template
 COPY --from=build --chown=node:node /app/scripts/provision-tenant.mjs ./scripts/provision-tenant.mjs
+COPY --from=build --chown=node:node /app/scripts/manager-setup.mjs ./scripts/manager-setup.mjs
 COPY --from=build --chown=node:node /app/scripts/tenant-initial-admin.mjs ./scripts/tenant-initial-admin.mjs
 COPY --from=build --chown=node:node /app/scripts/database-schema.mjs ./scripts/database-schema.mjs
 COPY --from=build --chown=node:node /app/database.sql ./database.sql

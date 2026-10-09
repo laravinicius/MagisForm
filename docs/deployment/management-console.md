@@ -1,5 +1,29 @@
 # Console de gestão MagisForm
 
+## Instalação automática em Ubuntu 24.04
+
+Em uma VM limpa Ubuntu Server 24.04 amd64, execute como root ou com `sudo`:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/laravinicius/magisform/main/deploy/install.sh | sudo bash
+```
+
+O instalador instala Docker Engine e Compose, clona a branch `main`, registra o commit e constrói as imagens localmente. Não publica imagens. Ele sobe Nginx Proxy Manager, API do console e executor separado; somente o executor recebe o socket Docker. O banco e a aplicação/API de cada farmácia permanecem em containers, rede, segredos e volume exclusivos.
+
+Escolha teste local ou publicação pública. No teste local, o NPM publica HTTPS somente em loopback na porta 8443, usa hostnames `.magisform.test` e um certificado de teste. Acesse com o túnel exibido pelo instalador e mapeie o hostname para `127.0.0.1` no arquivo `hosts` do computador. Para publicar depois, execute:
+
+```sh
+sudo magisform configure-domain gestao.exemplo.com.br operador@exemplo.com
+```
+
+O comando valida o DNS A contra o IPv4 público da VM, configura as portas 80/443, solicita o certificado e troca a origem canônica do console. O firewall do provedor precisa permitir TCP 80/443. A porta 81 do NPM permanece ligada a loopback.
+
+No modo público durante a instalação, informe o domínio do console e um e-mail. O DNS precisa apontar para o IPv4 público da VM e as portas 80/443 precisam estar liberadas. O usuário do painel, a senha e o segredo TOTP aparecem apenas no primeiro setup; guarde-os em um cofre. O NPM recebe uma senha aleatória própria, guardada no diretório privado de estado. A repetição do instalador preserva as credenciais e volumes existentes.
+
+O painel configura automaticamente o Proxy Host para cada farmácia. Em produção ele solicita certificado Let's Encrypt individual; no modo local reutiliza o certificado de teste wildcard. O usuário cadastra domínio público por farmácia quando estiver em modo público; no modo local use um hostname terminado em `.magisform.test`.
+
+O comando baixa código mutável da branch `main`; o commit efetivamente instalado fica em `/srv/magisform-manager/install-manifest.json`. Para reproduzir os mesmos bytes em outra VM, fixe manualmente o commit antes da instalação. Esse fluxo não publica nem aprova release. A etapa 11 continua com gate de capacidade pendente e deve ser revalidada antes de uso com clientes.
+
 O console opera instalações de clientes sem compartilhar seus bancos. O serviço `api` serve a interface e a API administrativa; o serviço `agent` executa comandos fechados do Docker. Somente `agent` monta `/var/run/docker.sock` e ele não possui porta publicada. API e executor compartilham uma rede interna protegida por token; o NPM alcança somente a API pela rede `npm-management`.
 
 ## Preparação de operador
@@ -18,13 +42,13 @@ O setup não sobrescreve arquivos de operador/token existentes. A senha só é e
 2. Copie `.env.example` para `.env` fora do Git. Informe os digests SHA-256 aprovados, a origem HTTPS do painel, o CIDR real e exclusivo da rede entre NPM e API, o diretório de estado e o GID do socket Docker. Não use os valores ilustrativos do exemplo.
 3. Construa e publique a imagem do console somente após o gate de QA; prenda-a por digest em `MAGISFORM_MANAGER_IMAGE`. Configure DNS/TLS e faça `docker compose --env-file .env -f compose.yaml up -d` na pasta `deploy/manager`.
 4. A infraestrutura NPM cria a rede `npm-management`. No painel do NPM, crie manualmente o Proxy Host do domínio `MAGISFORM_MANAGER_ORIGIN` apontando para `api:3003`, com TLS individual, Force SSL e Block Common Exploits. O painel administrativo do próprio NPM segue restrito a loopback/túnel SSH.
-5. O primeiro acesso usa senha e TOTP. O console mostra apenas imagens configuradas em `MAGISFORM_MANAGER_APPROVED_IMAGES`. Cada imagem precisa ser referência imutável `repo@sha256:<digest>`.
+5. O primeiro acesso usa senha e TOTP. O console mostra apenas a imagem aprovada pela instalação: em modo automático, uma tag local vinculada ao commit e ao ID imutável da imagem; em operação manual, uma referência `repo@sha256:<digest>`.
 
 O console usa senha Argon2id + TOTP de seis dígitos, Origin/CSRF estritos, cookies seguros em produção, sessões temporárias e rate limit. A API e o NPM nunca recebem o socket Docker. O executor implementa somente consulta do estado de projetos catalogados, provisionamento pelo script aprovado e `start`, `stop` ou `restart`; não aceita comandos, caminhos, nomes de serviço ou imagens arbitrários. Não há remoção de instalação no painel.
 
 ## Provisionamento e recuperação
 
-O fluxo automático reusa `scripts/provision-tenant.mjs`, gera banco/segredos exclusivos, aplica bootstrap apenas em banco vazio e cria o administrador inicial. A senha inicial é entregue na resposta de criação uma única vez; o arquivo protegido `secrets/initial-admin.txt` permanece no host para recuperação operacional por acesso local. A confirmação do NPM e do certificado continua manual.
+O fluxo automático reusa `scripts/provision-tenant.mjs`, gera banco/segredos exclusivos, aplica bootstrap apenas em banco vazio e cria o administrador inicial. A senha inicial é entregue na resposta de criação uma única vez; o arquivo protegido `secrets/initial-admin.txt` permanece no host para recuperação operacional por acesso local. O executor registra o Proxy Host no NPM e, em modo público, solicita o certificado Let's Encrypt antes de anunciar o endereço no painel.
 
 O botão **Gerar pacote** baixa `compose.yaml`, `.env.example` e instruções sem senhas. O operador completa CIDR e arquivos de segredo no host, valida o preflight e segue o bootstrap operacional antes de subir os serviços.
 

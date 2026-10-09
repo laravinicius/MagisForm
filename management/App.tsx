@@ -61,6 +61,9 @@ export function App() {
   const [loginError, setLoginError] = useState('');
   const [installations, setInstallations] = useState<Installation[]>([]);
   const [approvedImages, setApprovedImages] = useState<string[]>([]);
+  const [testDomainSuffix, setTestDomainSuffix] = useState('.magisform.test');
+  const [originPortSuffix, setOriginPortSuffix] = useState('');
+  const [publicMode, setPublicMode] = useState(false);
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
@@ -68,6 +71,7 @@ export function App() {
   const [busyId, setBusyId] = useState('');
   const [menuId, setMenuId] = useState('');
   const [credentials, setCredentials] = useState<Credentials | null>(null);
+  const [createdHost, setCreatedHost] = useState('');
   const [copied, setCopied] = useState(false);
   const [values, setValues] = useState<FormValues>({ id: '', host: '', name: '', adminName: '', adminUsername: 'admin', image: '' });
   const createForm = useRef<HTMLFormElement>(null);
@@ -92,8 +96,8 @@ export function App() {
     const load = async () => {
       setLoading(true); setError('');
       try {
-        const [, config] = await Promise.all([fetchInstallations(), request<{ approvedImages: string[] }>('/config')]);
-        if (alive) { setApprovedImages(config.approvedImages); setValues((previous) => ({ ...previous, image: previous.image || config.approvedImages[0] || '' })); }
+        const [, config] = await Promise.all([fetchInstallations(), request<{ approvedImages: string[]; testDomainSuffix: string; originPortSuffix: string; publicMode: boolean }>('/config')]);
+        if (alive) { setApprovedImages(config.approvedImages); setTestDomainSuffix(config.testDomainSuffix); setOriginPortSuffix(config.originPortSuffix); setPublicMode(config.publicMode); setValues((previous) => ({ ...previous, image: previous.image || config.approvedImages[0] || '' })); }
       } catch (cause) { if (alive) setError(cause instanceof Error ? cause.message : 'Falha ao consultar Docker.'); }
       finally { if (alive) setLoading(false); }
     };
@@ -134,7 +138,7 @@ export function App() {
     event.preventDefault(); setBusyId('creating'); setError(''); setMessage('');
     try {
       const created = await request<Credentials>('/installations', { method: 'POST', body: JSON.stringify(values) });
-      setCredentials(created); setFormOpen(false); setMessage(`A instalação ${values.name} foi criada. Configure o Proxy Host no NPM para liberar o domínio.`);
+      setCreatedHost(values.host); setCredentials(created); setFormOpen(false); setMessage(`A instalação ${values.name} foi criada. O Proxy Host e o certificado foram configurados automaticamente.`);
       setValues({ id: '', host: '', name: '', adminName: '', adminUsername: 'admin', image: approvedImages[0] || '' }); await fetchInstallations();
     } catch (cause) { setError(cause instanceof Error ? cause.message : 'Não foi possível provisionar a instalação.'); }
     finally { setBusyId(''); }
@@ -186,7 +190,7 @@ export function App() {
         <div><p className="eyebrow">CENTRAL DE OPERAÇÕES</p><h1 className="ui-page-title">Instalações</h1><p className="page-description">Acompanhe os ambientes MagisForm e gerencie os serviços de cada empresa.</p></div>
         <div className="intro-actions"><span className="refresh-status"><Activity size={16} /> Atualização automática a cada 15 s</span><button className="ui-button ui-button-primary create-button" onClick={() => setFormOpen(true)} disabled={!approvedImages.length}><CirclePlus size={19} /> Nova instalação</button></div>
       </section>
-      {!approvedImages.length && <p className="feedback warning" role="status"><CircleHelp size={18} /> Configure uma imagem aprovada por digest no serviço de gestão para habilitar o provisionamento.</p>}
+      {!approvedImages.length && <p className="feedback warning" role="status"><CircleHelp size={18} /> Nenhuma imagem aprovada está disponível para provisionamento.</p>}
       {message && <p className="feedback success" role="status"><Check size={18} />{message}</p>}
       {error && <p className="feedback error" role="alert"><AlertCircle size={18} />{error}</p>}
       <section className="summary-grid" aria-label="Resumo das instalações">
@@ -196,16 +200,16 @@ export function App() {
       </section>
       <section className="installations-section" aria-labelledby="installations-heading">
         <div className="section-heading"><div><h2 id="installations-heading">Ambientes de clientes</h2><p>Estado individual dos containers de aplicação e banco.</p></div><button className="ui-button refresh-button" onClick={() => void fetchInstallations()} disabled={loading} aria-label="Atualizar instalações"><RefreshCw size={18} className={loading ? 'spin' : ''} /></button></div>
-        {!installations.length ? <div className="empty-state ui-panel"><span className="empty-icon"><Server size={25} /></span><h3>Nenhuma instalação cadastrada</h3><p>Crie uma instalação para começar ou gere um pacote Docker para aplicar manualmente.</p><button className="ui-button ui-button-primary" onClick={() => setFormOpen(true)} disabled={!approvedImages.length}><CirclePlus size={18} /> Criar primeira instalação</button></div> : <div className="installation-list">
+        {!installations.length ? <div className="empty-state ui-panel"><span className="empty-icon"><Server size={25} /></span><h3>Nenhuma instalação cadastrada</h3><p>Crie a primeira farmácia. O painel prepara os containers, o banco, o Proxy Host e o certificado.</p><button className="ui-button ui-button-primary" onClick={() => setFormOpen(true)} disabled={!approvedImages.length}><CirclePlus size={18} /> Criar primeira instalação</button></div> : <div className="installation-list">
           {installations.map((item) => {
             const appContainer = item.containers.find((container) => container.service === 'app');
             const dbContainer = item.containers.find((container) => container.service === 'db');
             const working = busyId.startsWith(`${item.id}:`);
             return <article className="tenant-card ui-panel" key={item.id}>
               <div className="tenant-main">
-                <div className="tenant-identity"><span className="tenant-avatar"><Container size={20} /></span><div><h3>{item.name}</h3><a href={`https://${item.host}`} target="_blank" rel="noreferrer">{item.host}<ExternalLink size={13} /></a><span className="tenant-id">ID: {item.id} · {item.status === 'provisioned' ? 'Provisionada' : item.status === 'provisioning' ? 'Provisionamento pendente' : 'Preparada'}</span></div></div>
+                <div className="tenant-identity"><span className="tenant-avatar"><Container size={20} /></span><div><h3>{item.name}</h3><a href={`https://${item.host}${originPortSuffix}`} target="_blank" rel="noreferrer">{item.host}{originPortSuffix}<ExternalLink size={13} /></a><span className="tenant-id">ID: {item.id} · {item.status === 'provisioned' ? 'Provisionada' : item.status === 'provisioning' ? 'Provisionamento pendente' : 'Preparada'}</span></div></div>
                 <div className="container-statuses"><ContainerStatus label="Aplicação" item={appContainer} /><ContainerStatus label="Banco" item={dbContainer} /></div>
-                <div className="tenant-version"><span>Imagem</span><code title={item.image}>{item.image.split('@')[0]}<br />{item.image.split('@')[1]?.slice(0, 19) || 'digest indisponível'}</code></div>
+                <div className="tenant-version"><span>Imagem</span><code title={item.image}>{item.image}</code></div>
                 <div className="tenant-actions">
                   <button className="ui-button action-button" onClick={() => setMenuId(menuId === item.id ? '' : item.id)} aria-expanded={menuId === item.id} aria-haspopup="menu" disabled={Boolean(working)}>{working ? <LoaderCircle size={16} className="spin" /> : <>Ações <ChevronDown size={16} /></>}</button>
                   {menuId === item.id && <div className="action-menu" role="menu">
@@ -225,15 +229,15 @@ export function App() {
       <div className="modal-heading"><div><p className="eyebrow">NOVA EMPRESA</p><h2 id="create-title" className="ui-page-title">Criar instalação</h2></div><button className="ui-button close-button" aria-label="Fechar" onClick={() => setFormOpen(false)} disabled={Boolean(busyId)}><X size={20} /></button></div>
       <form ref={createForm} className="manager-form" onSubmit={submitCreate}>
         <label>Nome da empresa<input className="ui-field" value={values.name} onChange={(event) => updateField('name', event.target.value)} maxLength={80} required /></label>
-        <div className="form-two-columns"><label>Identificador<input className="ui-field" value={values.id} onChange={(event) => updateField('id', slugify(event.target.value))} maxLength={31} pattern="[a-z][a-z0-9-]{1,30}" required /><small>Gerado pelo nome; usado nos recursos Docker.</small></label><label>Domínio da empresa<input className="ui-field" type="text" value={values.host} onChange={(event) => updateField('host', event.target.value.toLowerCase())} placeholder="farmacia.exemplo.com.br" autoCapitalize="none" required /></label></div>
-        <label>Versão aprovada da aplicação<select className="ui-field" value={values.image} onChange={(event) => updateField('image', event.target.value)} required>{approvedImages.map((image) => <option key={image} value={image}>{image.split('@')[0]} · {image.split('@')[1]?.slice(0, 15)}</option>)}</select></label>
+        <div className="form-two-columns"><label>Identificador<input className="ui-field" value={values.id} onChange={(event) => updateField('id', slugify(event.target.value))} maxLength={31} pattern="[a-z][a-z0-9-]{1,30}" required /><small>Gerado pelo nome; usado nos recursos Docker.</small></label><label>Domínio da empresa<input className="ui-field" type="text" value={values.host} onChange={(event) => updateField('host', event.target.value.toLowerCase())} placeholder={publicMode ? 'farmacia.exemplo.com.br' : `farmacia${testDomainSuffix}`} autoCapitalize="none" required /><small>{publicMode ? 'O DNS precisa apontar para esta VM para emitir HTTPS.' : `No teste local, use um domínio terminado em ${testDomainSuffix}.`}</small></label></div>
+        <label>Versão aprovada da aplicação<select className="ui-field" value={values.image} onChange={(event) => updateField('image', event.target.value)} required>{approvedImages.map((image) => <option key={image} value={image}>{image}</option>)}</select></label>
         <div className="form-two-columns"><label>Nome do administrador inicial<input className="ui-field" value={values.adminName} onChange={(event) => updateField('adminName', event.target.value)} maxLength={120} required /></label><label>Usuário inicial<input className="ui-field" value={values.adminUsername} onChange={(event) => updateField('adminUsername', event.target.value)} maxLength={100} required /></label></div>
         <p className="form-note"><ShieldCheck size={16} /> Senhas do banco e do primeiro administrador são geradas individualmente. O acesso inicial será exibido uma única vez.</p>
         <div className="modal-actions"><button className="ui-button cancel-button" type="button" onClick={() => setFormOpen(false)} disabled={Boolean(busyId)}>Cancelar</button><button className="ui-button ui-button-secondary" type="button" onClick={() => void generatePackage()} disabled={Boolean(busyId)}>{busyId === 'package' ? <LoaderCircle size={17} className="spin" /> : <Download size={17} />} Gerar pacote</button><button className="ui-button ui-button-primary" type="submit" disabled={Boolean(busyId)}>{busyId === 'creating' ? <LoaderCircle size={17} className="spin" /> : <CirclePlus size={17} />} Provisionar</button></div>
         {error && <p className="feedback error" role="alert"><AlertCircle size={18} />{error}</p>}
       </form>
     </section></div>}
-    {credentials && <div className="modal-backdrop credential-backdrop"><section className="manager-modal credential-modal ui-dialog" role="dialog" aria-modal="true" aria-labelledby="credential-title"><span className="credential-icon"><ShieldCheck size={24} /></span><p className="eyebrow">ACESSO INICIAL</p><h2 id="credential-title" className="ui-page-title">Guarde estas credenciais</h2><p>Elas são exibidas uma única vez. Acesse a nova instalação depois de configurar o Proxy Host no NPM.</p><dl><dt>Administrador</dt><dd>{credentials.name}</dd><dt>Usuário</dt><dd>{credentials.username}</dd><dt>Senha inicial</dt><dd className="initial-password">{credentials.password}</dd></dl><div className="credential-actions"><button className="ui-button ui-button-secondary" onClick={() => { void navigator.clipboard.writeText(`Usuário: ${credentials.username}\nSenha: ${credentials.password}`).then(() => setCopied(true)); }}>{copied ? <Check size={17} /> : <Clipboard size={17} />}{copied ? 'Copiado' : 'Copiar acesso'}</button><button className="ui-button ui-button-primary" onClick={() => { setCredentials(null); setCopied(false); }}>Guardei as credenciais</button></div></section></div>}
+    {credentials && <div className="modal-backdrop credential-backdrop"><section className="manager-modal credential-modal ui-dialog" role="dialog" aria-modal="true" aria-labelledby="credential-title"><span className="credential-icon"><ShieldCheck size={24} /></span><p className="eyebrow">ACESSO INICIAL</p><h2 id="credential-title" className="ui-page-title">Guarde estas credenciais</h2><p>O painel já configurou o roteamento. Acesse <strong>https://{createdHost}{originPortSuffix}</strong> após o DNS ou o mapeamento local do domínio.</p><dl><dt>Administrador</dt><dd>{credentials.name}</dd><dt>Usuário</dt><dd>{credentials.username}</dd><dt>Senha inicial</dt><dd className="initial-password">{credentials.password}</dd></dl><div className="credential-actions"><button className="ui-button ui-button-secondary" onClick={() => { void navigator.clipboard.writeText(`Usuário: ${credentials.username}\nSenha: ${credentials.password}`).then(() => setCopied(true)); }}>{copied ? <Check size={17} /> : <Clipboard size={17} />}{copied ? 'Copiado' : 'Copiar acesso'}</button><button className="ui-button ui-button-primary" onClick={() => { setCredentials(null); setCopied(false); }}>Guardei as credenciais</button></div></section></div>}
   </main>;
 }
 

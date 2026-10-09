@@ -8,6 +8,7 @@ const envSchema = z.object({
   MAGISFORM_SERVER_HOST: z.string().default('127.0.0.1'),
   MAGISFORM_SERVER_PORT: z.coerce.number().int().min(1).max(65535).default(3001),
   MAGISFORM_SERVER_ORIGIN: z.string().url().optional(),
+  MAGISFORM_SERVER_ALLOW_HOST_WITHOUT_PORT: z.enum(['true', 'false']).default('false').transform((value) => value === 'true'),
   MAGISFORM_SERVER_TRUST_PROXY: z.string().default(''),
   MAGISFORM_SERVER_INSTALLATION_NAME: z.string().trim().min(1).max(100).default('MagisForm'),
   MAGISFORM_SERVER_BRAND: z.string().trim().min(1).max(80).default('MagisForm'),
@@ -52,7 +53,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env) {
   const secure = value.NODE_ENV === 'production';
   return {
     mode: value.NODE_ENV, host: value.MAGISFORM_SERVER_HOST, port: value.MAGISFORM_SERVER_PORT,
-    origin, secure, trustProxy, installationName: value.MAGISFORM_SERVER_INSTALLATION_NAME,
+    origin, secure, trustProxy, allowHostWithoutPort: value.MAGISFORM_SERVER_ALLOW_HOST_WITHOUT_PORT, installationName: value.MAGISFORM_SERVER_INSTALLATION_NAME,
     brand: value.MAGISFORM_SERVER_BRAND,
     brandTheme: { primary: value.MAGISFORM_SERVER_BRAND_PRIMARY, secondary: value.MAGISFORM_SERVER_BRAND_SECONDARY, background: value.MAGISFORM_SERVER_BRAND_BACKGROUND, surface: value.MAGISFORM_SERVER_BRAND_SURFACE, ink: value.MAGISFORM_SERVER_BRAND_INK, muted: value.MAGISFORM_SERVER_BRAND_MUTED },
     version: value.MAGISFORM_SERVER_VERSION,

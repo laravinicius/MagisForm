@@ -9,7 +9,12 @@ services:
       MAGISFORM_MANAGER_ROLE: api
       MAGISFORM_MANAGER_ORIGIN: ${MAGISFORM_MANAGER_ORIGIN:?informe a origem HTTPS do painel}
       MAGISFORM_MANAGER_TRUST_PROXY: ${MAGISFORM_MANAGER_TRUST_PROXY:?informe a sub-rede confiável do NPM}
+      MAGISFORM_MANAGER_SECURE_COOKIES: "true"
+      MAGISFORM_MANAGER_ALLOW_HOST_WITHOUT_PORT: ${MAGISFORM_MANAGER_ALLOW_HOST_WITHOUT_PORT:-false}
       MAGISFORM_MANAGER_APPROVED_IMAGES: ${MAGISFORM_MANAGER_APPROVED_IMAGES:?informe digests aprovados, separados por vírgula}
+      MAGISFORM_MANAGER_PUBLIC_MODE: ${MAGISFORM_MANAGER_PUBLIC_MODE:-false}
+      MAGISFORM_MANAGER_TEST_DOMAIN_SUFFIX: ${MAGISFORM_MANAGER_TEST_DOMAIN_SUFFIX:-.magisform.test}
+      MAGISFORM_MANAGER_ORIGIN_PORT_SUFFIX: ${MAGISFORM_MANAGER_ORIGIN_PORT_SUFFIX:-}
       MAGISFORM_MANAGER_AGENT_ORIGIN: http://agent:3101
       MAGISFORM_MANAGER_AGENT_TOKEN_FILE: /run/secrets/agent_token
       MAGISFORM_MANAGER_OPERATOR_FILE: /run/secrets/operator
@@ -46,8 +51,16 @@ services:
       MAGISFORM_MANAGER_AGENT_PORT: 3101
       MAGISFORM_MANAGER_AGENT_TOKEN_FILE: /run/secrets/agent_token
       MAGISFORM_MANAGER_APPROVED_IMAGES: ${MAGISFORM_MANAGER_APPROVED_IMAGES:?informe digests aprovados, separados por vírgula}
+      MAGISFORM_MANAGER_EXPECTED_IMAGE_ID: ${MAGISFORM_MANAGER_EXPECTED_IMAGE_ID:-}
+      MAGISFORM_MANAGER_PUBLIC_MODE: ${MAGISFORM_MANAGER_PUBLIC_MODE:-false}
+      MAGISFORM_MANAGER_CERTIFICATE_EMAIL: ${MAGISFORM_MANAGER_CERTIFICATE_EMAIL:-}
+      MAGISFORM_MANAGER_TEST_DOMAIN_SUFFIX: ${MAGISFORM_MANAGER_TEST_DOMAIN_SUFFIX:-.magisform.test}
+      MAGISFORM_MANAGER_ORIGIN_PORT_SUFFIX: ${MAGISFORM_MANAGER_ORIGIN_PORT_SUFFIX:-}
+      MAGISFORM_NPM_API_ORIGIN: http://npm:81/api
+      MAGISFORM_NPM_CREDENTIALS_FILE: /run/secrets/npm_credentials
     secrets:
       - agent_token
+      - npm_credentials
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - ${MAGISFORM_MANAGER_ROOT}:${MAGISFORM_MANAGER_ROOT}
@@ -57,6 +70,7 @@ services:
       - "3101"
     networks:
       - manager_control
+      - npm_control
     healthcheck:
       test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3101/health/live').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
       interval: 15s
@@ -76,6 +90,8 @@ secrets:
     file: ${MAGISFORM_MANAGER_STATE_DIR:?informe diretório de estado do painel}/operator.json
   agent_token:
     file: ${MAGISFORM_MANAGER_STATE_DIR:?informe diretório de estado do painel}/agent-token.txt
+  npm_credentials:
+    file: ${MAGISFORM_MANAGER_STATE_DIR:?informe diretório de estado do painel}/npm-credentials.json
 
 networks:
   manager_control:
@@ -83,4 +99,7 @@ networks:
     internal: true
   manager_edge:
     name: ${MAGISFORM_MANAGER_EDGE_NETWORK:-npm-management}
+    external: true
+  npm_control:
+    name: magisform_npm_control
     external: true

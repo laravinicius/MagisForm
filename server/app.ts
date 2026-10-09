@@ -103,7 +103,9 @@ export async function buildApp({ config, db: providedDb, pool: providedPool, clo
     const remoteAddress = request.raw.socket.remoteAddress?.replace(/^::ffff:/, '');
     const loopbackHealthProbe = request.url.split('?')[0] === '/health/live' && (remoteAddress === '::1' || remoteAddress === '127.0.0.1' || Boolean(remoteAddress?.startsWith('127.')));
     if (loopbackHealthProbe) return;
-    if (request.headers.host !== new URL(config.origin).host || request.protocol !== 'https') return reply.code(404).send({ error: { code: 'NOT_FOUND', message: 'Recurso não encontrado.', requestId: request.id } });
+    const canonicalOrigin = new URL(config.origin);
+    const hostMatches = request.headers.host === canonicalOrigin.host || (config.allowHostWithoutPort && request.headers.host === canonicalOrigin.hostname);
+    if (!hostMatches || request.protocol !== 'https') return reply.code(404).send({ error: { code: 'NOT_FOUND', message: 'Recurso não encontrado.', requestId: request.id } });
   });
 
   app.setErrorHandler((error, request, reply) => {
