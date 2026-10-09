@@ -106,7 +106,7 @@ export class NpmClient {
   }
 }
 
-export async function bootstrapNpmCredentials(baseUrl: string, credentialsFile: string, accountEmail?: string): Promise<void> {
+export async function bootstrapNpmCredentials(baseUrl: string, credentialsFile: string, initialPassword: string, accountEmail?: string): Promise<void> {
   const apiUrl = (endpoint: string) => new URL(endpoint.replace(/^\//, ''), `${baseUrl.replace(/\/$/, '')}/`);
   const updateEmail = async (credentials: NpmCredentials) => {
     if (!accountEmail) return credentials;
@@ -132,18 +132,17 @@ export async function bootstrapNpmCredentials(baseUrl: string, credentialsFile: 
   }
 
   const identity = 'admin@example.com';
-  const defaultSecret = 'changeme';
   const login = await fetch(apiUrl('tokens'), {
     method: 'POST', headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ identity, secret: defaultSecret }), signal: AbortSignal.timeout(10_000),
+    body: JSON.stringify({ identity, secret: initialPassword }), signal: AbortSignal.timeout(10_000),
   });
-  if (!login.ok) throw new Error('Não foi possível autenticar na conta inicial do NPM; verifique a versão da imagem e o estado persistido.');
+  if (!login.ok) throw new Error('Não foi possível autenticar na conta inicial criada pelo NPM; verifique os logs do NPM e o estado persistido.');
   const { token } = await login.json() as { token?: string };
   if (!token) throw new Error('A API NPM não retornou token durante a inicialização.');
   const secret = randomBytes(36).toString('base64url');
   const changed = await fetch(apiUrl('users/1/auth'), {
     method: 'PUT', headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
-    body: JSON.stringify({ type: 'password', current: defaultSecret, secret }), signal: AbortSignal.timeout(10_000),
+    body: JSON.stringify({ type: 'password', current: initialPassword, secret }), signal: AbortSignal.timeout(10_000),
   });
   if (!changed.ok) throw new NpmApiError(changed.status, 'Não foi possível substituir a senha inicial do NPM.');
   await mkdir(path.dirname(credentialsFile), { recursive: true, mode: 0o700 });

@@ -108,6 +108,11 @@ log 'Preparando diretórios persistentes e rede de entrada do NPM'
 install -d -m 0700 "$INSTALL_DIR" "$STATE_DIR"
 chown -R 1000:1000 "$INSTALL_DIR"
 chmod 0700 "$STATE_DIR"
+if [[ ! -s "$STATE_DIR/npm-initial-admin-password.txt" ]]; then
+  openssl rand -hex 32 > "$STATE_DIR/npm-initial-admin-password.txt"
+fi
+chmod 0600 "$STATE_DIR/npm-initial-admin-password.txt"
+chown 1000:1000 "$STATE_DIR/npm-initial-admin-password.txt"
 if ! docker network inspect npm-management >/dev/null 2>&1; then
   docker network create --driver bridge --label com.magisform.network=manager-edge npm-management >/dev/null
 else

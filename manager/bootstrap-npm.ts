@@ -14,7 +14,9 @@ if (!host || !['local', 'public'].includes(mode)) throw new Error('Uso: bootstra
 if (mode === 'public' && !email.includes('@')) throw new Error('Modo público exige um e-mail válido para o certificado.');
 
 await mkdir(stateDir, { recursive: true, mode: 0o700 });
-await bootstrapNpmCredentials(baseUrl, credentialsFile, mode === 'public' ? email : undefined);
+const initialAdminPassword = await readFile(path.join(stateDir, 'npm-initial-admin-password.txt'), 'utf8').then((value) => value.trim());
+if (initialAdminPassword.length < 32) throw new Error('Senha inicial protegida do NPM ausente ou inválida.');
+await bootstrapNpmCredentials(baseUrl, credentialsFile, initialAdminPassword, mode === 'public' ? email : undefined);
 const npm = await NpmClient.fromFile(baseUrl, credentialsFile);
 let certificateId: number;
 if (mode === 'public') {

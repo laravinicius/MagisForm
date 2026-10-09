@@ -46,7 +46,7 @@ describe('Integração com Nginx Proxy Manager', () => {
     expect(payload).toMatchObject({ provider: 'letsencrypt', domain_names: ['farmacia.example.com'], meta: { dns_challenge: false } });
   });
 
-  it('substitui a senha padrão e registra e-mail próprio no NPM', async () => {
+  it('usa a senha inicial provisionada, rotaciona a credencial e registra e-mail próprio no NPM', async () => {
     const directory = await mkdtemp(path.join(os.tmpdir(), 'magisform-npm-test-'));
     const calls: Array<{ url: string; method: string; body?: Record<string, unknown> }> = [];
     const fetcher: typeof fetch = vi.fn(async (input, init) => {
@@ -59,13 +59,15 @@ describe('Integração com Nginx Proxy Manager', () => {
     vi.stubGlobal('fetch', fetcher);
     try {
       const file = path.join(directory, 'npm-credentials.json');
-      await bootstrapNpmCredentials('http://npm:81/api', file, 'operador@example.com');
+      const initialPassword = 'random-initial-password-from-compose-secret';
+      await bootstrapNpmCredentials('http://npm:81/api', file, initialPassword, 'operador@example.com');
       const credentials = JSON.parse(await readFile(file, 'utf8')) as { identity: string; secret: string };
 
       expect(credentials.identity).toBe('operador@example.com');
-      expect(credentials.secret).not.toBe('changeme');
+      expect(credentials.secret).not.toBe(initialPassword);
       expect(credentials.secret.length).toBeGreaterThanOrEqual(40);
-      expect(calls.some((call) => call.url.endsWith('/users/1/auth') && call.body?.current === 'changeme')).toBe(true);
+      expect(calls.some((call) => call.url.endsWith('/tokens') && call.body?.identity === 'admin@example.com' && call.body?.secret === initialPassword)).toBe(true);
+      expect(calls.some((call) => call.url.endsWith('/users/1/auth') && call.body?.current === initialPassword)).toBe(true);
       expect(calls.some((call) => call.url.endsWith('/users/1') && call.body?.email === 'operador@example.com')).toBe(true);
     } finally {
       vi.unstubAllGlobals();

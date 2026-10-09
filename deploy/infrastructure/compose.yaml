@@ -4,6 +4,11 @@ services:
     image: jc21/nginx-proxy-manager:2.16.0
     container_name: magisform-npm
     restart: unless-stopped
+    environment:
+      INITIAL_ADMIN_EMAIL: admin@example.com
+      INITIAL_ADMIN_PASSWORD__FILE: /run/secrets/npm_initial_admin_password
+    secrets:
+      - npm_initial_admin_password
     ports:
       - "${MAGISFORM_HTTP_BIND_IP:-0.0.0.0}:${MAGISFORM_HTTP_PORT:-80}:80"
       - "${MAGISFORM_HTTPS_BIND_IP:-0.0.0.0}:${MAGISFORM_HTTPS_PORT:-443}:443"
@@ -47,6 +52,9 @@ volumes:
     name: magisform_npm_letsencrypt
   npm_default_tls:
     name: magisform_npm_default_tls
+secrets:
+  npm_initial_admin_password:
+    file: ${MAGISFORM_MANAGER_STATE_DIR:?informe diretório de estado do painel}/npm-initial-admin-password.txt
 networks:
   npm_control:
     name: magisform_npm_control
